@@ -32,16 +32,27 @@ def build_authorization_header_from_body(body: str | bytes, ttl_seconds: int = 3
     expires = str(int(time.time()) + ttl_seconds)
     signing_string = _build_signing_string(body, created, expires)
     signature = sign_ed25519(signing_string, settings.ONDC_SIGNING_PRIVATE_KEY_B64)
+    if settings.DEBUG_PRINT_PAYLOADS:
+        print('=== ONDC SIGNATURE ===')
+        print(f'created: {created}')
+        print(f'expires: {expires}')
+        print(f'signature: {signature}')
+        print('============')
     key_id = f'{settings.ONDC_SUBSCRIBER_ID}|{settings.ONDC_UNIQUE_KEY_ID}|ed25519'
-    return (
+    authorization_header = (
         'Signature '
         f'keyId="{key_id}",'
         'algorithm="ed25519",'
         f'created="{created}",'
         f'expires="{expires}",'
-        'headers="(created)(expires)digest",'
+        'headers="(created) (expires) digest",'
         f'signature="{signature}"'
     )
+    if settings.DEBUG_PRINT_PAYLOADS:
+        print('authorization:')
+        print(authorization_header)
+        print('============')
+    return authorization_header
 
 
 def parse_authorization_header(header: str) -> AuthHeader:
