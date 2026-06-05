@@ -1,5 +1,6 @@
 from typing import Any
 from app.schemas.mf import SearchRequest, SelectRequest, InitRequest, ConfirmRequest, StatusRequest
+from app.core.config import get_settings
 from app.services.context import build_context
 
 
@@ -12,13 +13,47 @@ class MutualFundMapper:
 
     def build_search(self, req: SearchRequest) -> dict[str, Any]:
         context = build_context('search', city=req.city)
+        settings = get_settings()
+        category = {'descriptor': {'code': req.category or 'MUTUAL_FUNDS'}} if settings.ONDC_CORE_VERSION.startswith('2.') else None
         payload: dict[str, Any] = {
             'context': context,
             'message': {
                 'intent': {
                     'descriptor': {'name': req.intent},
                     **({'provider': {'id': req.provider_id}} if req.provider_id else {}),
-                    **({'category': {'id': req.category}} if req.category else {}),
+                    **({'category': category} if category else {}),
+                    **({'category': {'id': req.category}} if req.category and not settings.ONDC_CORE_VERSION.startswith('2.') else {}),
+                    **(
+                        {
+                            'fulfillment': {
+                                'agent': {
+                                    'organization': {
+                                        'creds': [
+                                            {
+                                                'id': 'ARN-000000',
+                                                'type': 'ARN',
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                        if settings.ONDC_CORE_VERSION.startswith('2.')
+                        else {}
+                    ),
+                    **(
+                        {
+                            'tags': [
+                                {
+                                    'descriptor': {
+                                        'code': 'BAP_TERMS',
+                                    }
+                                }
+                            ]
+                        }
+                        if settings.ONDC_CORE_VERSION.startswith('2.')
+                        else {}
+                    ),
                 }
             },
         }

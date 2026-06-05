@@ -46,7 +46,7 @@ class OndcClient:
                 body_text = resp.text
                 if resp.status_code >= 400:
                     log.error('ondc_outbound_error', status_code=resp.status_code, body=body_text[:1000])
-                    raise OndcClientError(f'ONDC endpoint returned HTTP {resp.status_code}', 502)
+                    raise OndcClientError(f'ONDC endpoint returned HTTP {resp.status_code}: {body_text[:1000]}', 502)
                 try:
                     return resp.json()
                 except ValueError:
