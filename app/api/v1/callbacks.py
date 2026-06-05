@@ -18,11 +18,17 @@ registry_client = RegistryClient()
 async def _handle_callback(
     action: str,
     payload: OndcCallbackPayload,
-    db: AsyncSession,
+    db: AsyncSession | None,
     authorization: str | None,
     raw_body: bytes,
 ) -> AckResponse:
     raw = payload.model_dump(exclude_none=True)
+    settings = get_settings()
+    if settings.DEBUG_PRINT_PAYLOADS:
+        print('=== ONDC CALLBACK AUTHORIZATION ===')
+        print(f'action: {action}')
+        print(f'authorization: {authorization or ""}')
+        print('============')
     try:
         auth = await _verify_callback_signature(raw, raw_body, authorization)
     except Exception as exc:
@@ -50,27 +56,27 @@ async def _handle_callback(
 
 
 @router.post('/on_search', response_model=AckResponse)
-async def on_search(request: Request, payload: OndcCallbackPayload, db: AsyncSession = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+async def on_search(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_search', payload, db, authorization, await request.body())
 
 
 @router.post('/on_select', response_model=AckResponse)
-async def on_select(request: Request, payload: OndcCallbackPayload, db: AsyncSession = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+async def on_select(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_select', payload, db, authorization, await request.body())
 
 
 @router.post('/on_init', response_model=AckResponse)
-async def on_init(request: Request, payload: OndcCallbackPayload, db: AsyncSession = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+async def on_init(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_init', payload, db, authorization, await request.body())
 
 
 @router.post('/on_confirm', response_model=AckResponse)
-async def on_confirm(request: Request, payload: OndcCallbackPayload, db: AsyncSession = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+async def on_confirm(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_confirm', payload, db, authorization, await request.body())
 
 
 @router.post('/on_status', response_model=AckResponse)
-async def on_status(request: Request, payload: OndcCallbackPayload, db: AsyncSession = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+async def on_status(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_status', payload, db, authorization, await request.body())
 
 

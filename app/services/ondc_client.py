@@ -1,4 +1,5 @@
 from typing import Any
+import json
 import httpx
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -27,6 +28,17 @@ class OndcClient:
             'Authorization': build_authorization_header_from_body(raw_body),
             'X-ONDC-Subscriber-Id': self.settings.ONDC_SUBSCRIBER_ID,
         }
+        if self.settings.DEBUG_PRINT_PAYLOADS:
+            print('=== ONDC OUTBOUND HTTP ===')
+            print(f'url: {url}')
+            print(f'action: {payload.get("context", {}).get("action")}')
+            print('authorization:')
+            print(headers['Authorization'])
+            print('headers:')
+            print(json.dumps(headers, indent=2, sort_keys=True))
+            print('payload:')
+            print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            print('============')
         log.info('ondc_outbound_request', url=url, action=payload.get('context', {}).get('action'))
         try:
             async with httpx.AsyncClient(timeout=self.settings.ONDC_REQUEST_TIMEOUT_SECONDS) as client:

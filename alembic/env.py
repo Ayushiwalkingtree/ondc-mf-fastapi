@@ -8,7 +8,6 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
-from app.models.ondc import Base
 
 config = context.config
 
@@ -17,7 +16,13 @@ if config.config_file_name is not None:
 
 settings = get_settings()
 config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
-target_metadata = Base.metadata
+
+if settings.NO_DATABASE:
+    target_metadata = None
+else:
+    from app.models.ondc import Base
+
+    target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
@@ -53,6 +58,12 @@ async def run_migrations_online() -> None:
 
 
 if context.is_offline_mode():
-    run_migrations_offline()
+    if settings.NO_DATABASE:
+        print('Alembic skipped because NO_DATABASE=true')
+    else:
+        run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    if settings.NO_DATABASE:
+        print('Alembic skipped because NO_DATABASE=true')
+    else:
+        asyncio.run(run_migrations_online())

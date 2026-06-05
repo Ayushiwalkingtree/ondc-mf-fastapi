@@ -14,7 +14,7 @@ mapper = MutualFundMapper()
 client = OndcClient()
 
 
-async def _send(action: str, url: str, payload: dict, db: AsyncSession) -> OutboundResponse:
+async def _send(action: str, url: str, payload: dict, db: AsyncSession | None) -> OutboundResponse:
     await save_ondc_log(db, action=action, direction='outbound', payload=payload, status='SENT')
     ack = await client.post(url, payload)
     context = payload['context']
@@ -27,42 +27,42 @@ async def _send(action: str, url: str, payload: dict, db: AsyncSession) -> Outbo
 
 
 @router.post('/search', response_model=OutboundResponse)
-async def search(req: SearchRequest, db: AsyncSession = Depends(get_db)) -> OutboundResponse:
+async def search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
     settings = get_settings()
     payload = mapper.build_search(req)
     return await _send('search', settings.ONDC_GATEWAY_SEARCH_URL, payload, db)
 
 
 @router.post('/select', response_model=OutboundResponse)
-async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession = Depends(get_db)) -> OutboundResponse:
+async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
     bpp_uri, bpp_id = await _resolve_bpp(db, req.transaction_id, req.provider_id, bpp_uri, bpp_id)
     payload = mapper.build_select(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     return await _send('select', bpp_uri.rstrip('/') + '/select', payload, db)
 
 
 @router.post('/init', response_model=OutboundResponse)
-async def init(req: InitRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession = Depends(get_db)) -> OutboundResponse:
+async def init(req: InitRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
     bpp_uri, bpp_id = await _resolve_bpp(db, req.transaction_id, req.provider_id, bpp_uri, bpp_id)
     payload = mapper.build_init(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     return await _send('init', bpp_uri.rstrip('/') + '/init', payload, db)
 
 
 @router.post('/confirm', response_model=OutboundResponse)
-async def confirm(req: ConfirmRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession = Depends(get_db)) -> OutboundResponse:
+async def confirm(req: ConfirmRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
     bpp_uri, bpp_id = await _resolve_bpp(db, req.transaction_id, req.provider_id, bpp_uri, bpp_id)
     payload = mapper.build_confirm(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     return await _send('confirm', bpp_uri.rstrip('/') + '/confirm', payload, db)
 
 
 @router.post('/status', response_model=OutboundResponse)
-async def status(req: StatusRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession = Depends(get_db)) -> OutboundResponse:
+async def status(req: StatusRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
     bpp_uri, bpp_id = await _resolve_bpp(db, req.transaction_id, None, bpp_uri, bpp_id)
     payload = mapper.build_status(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     return await _send('status', bpp_uri.rstrip('/') + '/status', payload, db)
 
 
 async def _resolve_bpp(
-    db: AsyncSession,
+    db: AsyncSession | None,
     transaction_id: str,
     provider_id: str | None,
     bpp_uri: str | None,

@@ -1,11 +1,13 @@
 from typing import Any
+import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import get_settings
 from app.models.ondc import OndcTransactionLog
 
 
 async def save_ondc_log(
-    db: AsyncSession,
+    db: AsyncSession | None,
     *,
     action: str,
     direction: str,
@@ -13,7 +15,14 @@ async def save_ondc_log(
     status: str = 'RECEIVED',
     subscriber_id: str | None = None,
     error: str | None = None,
-) -> OndcTransactionLog:
+) -> OndcTransactionLog | None:
+    settings = get_settings()
+    if settings.NO_DATABASE or db is None:
+        _print_ondc_log(action=action, direction=direction, payload=payload, status=status, subscriber_id=subscriber_id, error=error)
+        return None
+    if settings.DEBUG_PRINT_PAYLOADS:
+        _print_ondc_log(action=action, direction=direction, payload=payload, status=status, subscriber_id=subscriber_id, error=error)
+
     context = payload.get('context') or {}
     transaction_id = context.get('transaction_id')
     message_id = context.get('message_id')
@@ -45,11 +54,15 @@ async def save_ondc_log(
 
 
 async def find_discovered_bpp(
-    db: AsyncSession,
+    db: AsyncSession | None,
     *,
     transaction_id: str,
     provider_id: str | None = None,
 ) -> tuple[str, str | None] | None:
+    settings = get_settings()
+    if settings.NO_DATABASE or db is None:
+        return None
+
     rows = (
         await db.scalars(
             select(OndcTransactionLog)
@@ -67,6 +80,29 @@ async def find_discovered_bpp(
         if match:
             return match
     return None
+
+
+def _print_ondc_log(
+    *,
+    action: str,
+    direction: str,
+    payload: dict[str, Any],
+    status: str,
+    subscriber_id: str | None,
+    error: str | None,
+) -> None:
+    heading = 'ONDC CALLBACK' if direction == 'inbound' else 'ONDC OUTBOUND'
+    print(f'=== {heading} ===')
+    print(f'action: {action}')
+    print(f'direction: {direction}')
+    print(f'status: {status}')
+    if subscriber_id:
+        print(f'subscriber_id: {subscriber_id}')
+    if error:
+        print(f'error: {error}')
+    print('payload:')
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    print('============')
 
 
 def _extract_bpp_from_on_search(payload: dict[str, Any], provider_id: str | None) -> tuple[str, str | None] | None:

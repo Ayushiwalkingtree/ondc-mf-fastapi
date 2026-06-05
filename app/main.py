@@ -12,7 +12,6 @@ from app.api.v1 import health, registry, callbacks, mf
 from app.core.config import get_settings
 from app.core.exceptions import AppException, app_exception_handler, unhandled_exception_handler
 from app.core.logging import configure_logging
-from app.models.ondc import Base
 from app.db import engine
 
 configure_logging()
@@ -35,12 +34,20 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     log.info('application_starting', app=settings.APP_NAME, env=settings.ENV)
-    await _init_database_with_retry()
+    if settings.NO_DATABASE:
+        log.info('database_startup_skipped', no_database=True)
+    else:
+        await _init_database_with_retry()
     yield
     log.info('application_stopping')
 
 
 async def _init_database_with_retry(attempts: int = 10, delay_seconds: float = 2.0) -> None:
+    if engine is None:
+        log.info('database_startup_skipped', no_database=True)
+        return
+    from app.models.ondc import Base
+
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:

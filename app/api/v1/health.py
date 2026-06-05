@@ -15,6 +15,10 @@ async def live() -> dict[str, str]:
 @router.get('/health/ready')
 async def ready() -> dict[str, str]:
     settings = get_settings()
+    if settings.NO_DATABASE:
+        return {'status': 'READY', 'mode': 'NO_DATABASE'}
+    if engine is None:
+        return {'status': 'READY', 'mode': 'NO_DATABASE'}
     async with engine.connect() as conn:
         await conn.execute(text('SELECT 1'))
     if settings.REDIS_URL:

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = 'postgresql+asyncpg://postgres:postgres@localhost:5432/ondc_mf'
     REDIS_URL: str = 'redis://localhost:6379/0'
+    NO_DATABASE: bool = False
+    DEBUG_PRINT_PAYLOADS: bool = False
 
     ONDC_ENV: str = 'staging'
     ONDC_DOMAIN: str = 'ONDC:FIS14'
