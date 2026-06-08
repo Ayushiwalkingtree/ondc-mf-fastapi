@@ -53,6 +53,29 @@ def test_lumpsum_select_mapper_builds_fis_210_payload() -> None:
     }
 
 
+def test_lumpsum_select_mapper_uses_workbench_example_fulfillment_id() -> None:
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            euin='E52432',
+            arn='ARN-124567',
+            sub_broker_arn='ARN-123456',
+        ),
+        bpp_id='staging-automation.ondc.org',
+        bpp_uri='https://workbench.ondc.tech/api-service/ONDC:FIS14/2.1.0/seller',
+    )
+
+    order = payload['message']['order']
+    assert order['items'][0]['fulfillment_ids'] == ['ff_123']
+    assert order['fulfillments'][0]['id'] == 'ff_123'
+    assert order['fulfillments'][0]['type'] == 'LUMPSUM'
+
+
 def test_extract_select_details_requires_lumpsum_fulfillment() -> None:
     payload = {
         'context': {'bpp_uri': 'https://seller.example/ondc', 'bpp_id': 'seller.example'},
