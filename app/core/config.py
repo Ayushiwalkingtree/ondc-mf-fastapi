@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     ONDC_COUNTRY: str = 'IND'
     ONDC_CITY: str = 'std:080'
     ONDC_CORE_VERSION: str = '1.2.0'
+    ONDC_CONTEXT_TTL: str = 'PT10M'
     ONDC_SUBSCRIBER_ID: str = Field('your-domain.com', min_length=3)
     ONDC_SUBSCRIBER_URI: str = Field('https://your-domain.com/ondc', min_length=8)
     ONDC_CALLBACK_URL: str = '/ondc'
