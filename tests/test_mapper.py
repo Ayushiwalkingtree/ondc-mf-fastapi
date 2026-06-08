@@ -39,7 +39,7 @@ def test_lumpsum_select_mapper_builds_fis_210_payload() -> None:
     assert order['items'][0]['fulfillment_ids'] == ['ff_122']
     assert order['fulfillments'][0]['type'] == 'LUMPSUM'
     assert order['fulfillments'][0]['customer']['person']['id'] == 'pan:arrpp7771n'
-    assert order['fulfillments'][0]['agent']['person']['id'] == 'euin:e52432'
+    assert order['fulfillments'][0]['agent']['person']['id'] == 'euin:E52432'
     assert order['xinput']['form_response']['submission_id'] == 'submission-1'
     assert order['tags'][0]['descriptor']['code'] == 'BAP_TERMS'
 

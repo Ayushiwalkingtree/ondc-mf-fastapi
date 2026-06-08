@@ -171,9 +171,12 @@ def _required(value: str | None, field_name: str) -> str:
 def _person_id(prefix: str, value: str | None) -> str:
     raw_value = _required(value, prefix)
     normalized_prefix = f'{prefix}:'
-    if raw_value.lower().startswith(normalized_prefix):
-        return raw_value.lower()
-    return f'{normalized_prefix}{raw_value.lower()}'
+    raw_suffix = raw_value.split(':', 1)[1] if raw_value.lower().startswith(normalized_prefix) else raw_value
+    if prefix == 'pan':
+        raw_suffix = raw_suffix.lower()
+    if prefix == 'euin':
+        raw_suffix = raw_suffix.upper()
+    return f'{normalized_prefix}{raw_suffix}'
 
 
 def _build_agent(req: SelectRequest) -> dict[str, Any]:
