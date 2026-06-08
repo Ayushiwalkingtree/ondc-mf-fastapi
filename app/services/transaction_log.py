@@ -133,12 +133,14 @@ async def find_discovered_select_details(
         await db.scalars(select(OndcTransactionLog).order_by(OndcTransactionLog.created_at.desc()))
     ).all()
     all_on_search_rows = [row for row in all_rows if row.action == 'on_search']
+    total_rows_matching_transaction_id = sum(1 for row in all_rows if row.transaction_id == transaction_id)
+    total_on_search_rows_matching_transaction_id = sum(1 for row in all_on_search_rows if row.transaction_id == transaction_id)
     log.info(
         'DISCOVERY_TABLE_COUNTS',
         total_transaction_log_rows=len(all_rows),
         total_on_search_rows=len(all_on_search_rows),
-        total_rows_matching_transaction_id=sum(1 for row in all_rows if row.transaction_id == transaction_id),
-        total_on_search_rows_matching_transaction_id=sum(1 for row in all_on_search_rows if row.transaction_id == transaction_id),
+        total_rows_matching_transaction_id=total_rows_matching_transaction_id,
+        total_on_search_rows_matching_transaction_id=total_on_search_rows_matching_transaction_id,
         total_rows_matching_provider_id=sum(1 for row in all_rows if row.provider_id == provider_id),
         total_on_search_rows_matching_provider_id_payload=sum(1 for row in all_on_search_rows if _payload_has_provider(row.payload, provider_id)),
         total_rows_matching_item_id=sum(1 for row in all_rows if row.item_id == item_id),
@@ -151,14 +153,49 @@ async def find_discovered_select_details(
     )
     if not all_on_search_rows:
         log.info('DISCOVERY_REJECTION_REASON', reason='no on_search rows found', **criteria)
+    if total_rows_matching_transaction_id == 0:
+        log.info(
+            'DISCOVERY_REJECTION_REASON',
+            reason='total_rows_matching_transaction_id = 0',
+            likely_causes=[
+                'select request is using a stale or wrong transaction_id',
+                'search transaction_id was not persisted in this database',
+                'server is connected to a different database/schema than the one inspected',
+            ],
+            available_recent_transaction_ids=_recent_transaction_ids(all_rows),
+            **criteria,
+        )
+    elif total_on_search_rows_matching_transaction_id == 0:
+        log.info(
+            'DISCOVERY_REJECTION_REASON',
+            reason='no on_search rows found for requested transaction_id',
+            likely_causes=[
+                'BPP callback has not reached /ondc/on_search',
+                'on_search callback was stored with a different transaction_id',
+                'select request is using the search ACK transaction_id but callback has not arrived yet',
+            ],
+            matching_non_on_search_actions=_actions_for_transaction(all_rows, transaction_id),
+            available_on_search_transaction_ids=_recent_transaction_ids(all_on_search_rows),
+            **criteria,
+        )
 
     for row in all_on_search_rows:
         entries = _on_search_row_entries(row)
         for entry in entries:
-            log.info('DISCOVERY_ON_SEARCH_ROW', **entry, **criteria)
+            log.info(
+                'DISCOVERY_ON_SEARCH_ROW',
+                **_prefixed_log_fields(
+                    criteria,
+                    entry,
+                    requested_transaction_id=transaction_id,
+                    stored_transaction_id=row.transaction_id,
+                ),
+            )
         log.info(
             'DISCOVERY_ON_SEARCH_ROW_EVALUATION',
             row_id=str(row.id),
+            requested_transaction_id=transaction_id,
+            stored_transaction_id=row.transaction_id,
             rejection=_diagnose_on_search_row_rejection(
                 row,
                 provider_id=provider_id,
@@ -329,6 +366,32 @@ def _to_str(value: Any) -> str | None:
     if value in (None, ''):
         return None
     return str(value)
+
+
+def _prefixed_log_fields(
+    criteria: dict[str, Any],
+    entry: dict[str, Any],
+    **extra: Any,
+) -> dict[str, Any]:
+    merged = dict(criteria)
+    merged.update(extra)
+    for key, value in entry.items():
+        merged[f'entry_{key}'] = value
+    return merged
+
+
+def _recent_transaction_ids(rows: list[OndcTransactionLog], limit: int = 10) -> list[str | None]:
+    seen: list[str | None] = []
+    for row in rows:
+        if row.transaction_id not in seen:
+            seen.append(row.transaction_id)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
+def _actions_for_transaction(rows: list[OndcTransactionLog], transaction_id: str) -> list[str]:
+    return [f'{row.action}/{row.direction}/{row.status}' for row in rows if row.transaction_id == transaction_id]
 
 
 def _database_backend(database_url: str) -> str:
