@@ -1,8 +1,12 @@
 from typing import Any
 from urllib.parse import urlparse
+import structlog
 from app.schemas.mf import SearchRequest, SelectRequest, InitRequest, ConfirmRequest, StatusRequest
 from app.core.config import get_settings
 from app.services.context import build_context
+
+
+log = structlog.get_logger(__name__)
 
 
 class MutualFundMapper:
@@ -62,8 +66,14 @@ class MutualFundMapper:
 
     def build_select(self, req: SelectRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
         context = build_context('select', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
+        log.info(
+            'select_context_generated',
+            transaction_id=req.transaction_id,
+            generated_select_message_id=context.get('message_id'),
+            raw_override_context_message_id=_raw_override_context_message_id(req.raw_overrides),
+        )
         if req.fulfillment_type == 'LUMPSUM':
-            fulfillment_id = _select_fulfillment_id(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
+            fulfillment_id = _required(req.fulfillment_id, 'fulfillment_id')
             payload: dict[str, Any] = {
                 'context': context,
                 'message': {
@@ -96,7 +106,21 @@ class MutualFundMapper:
                     }
                 },
             }
-            return deep_merge(payload, req.raw_overrides)
+            payload = deep_merge(payload, req.raw_overrides)
+            log.info(
+                'select_context_after_raw_overrides',
+                payload_context_message_id=(payload.get('context') or {}).get('message_id'),
+                raw_override_context_message_id=_raw_override_context_message_id(req.raw_overrides),
+            )
+            _apply_select_context_ids(payload, context)
+            _apply_resolved_select_fulfillment(payload, fulfillment_id, req.fulfillment_type)
+            log.info(
+                'select_fulfillment_payload_resolved',
+                resolved_fulfillment_id=fulfillment_id,
+                payload_fulfillment_id=_payload_fulfillment_id(payload),
+                payload_fulfillment_type=_payload_fulfillment_type(payload),
+            )
+            return payload
 
         payload: dict[str, Any] = {
             'context': context,
@@ -109,7 +133,14 @@ class MutualFundMapper:
                 }
             },
         }
-        return deep_merge(payload, req.raw_overrides)
+        payload = deep_merge(payload, req.raw_overrides)
+        log.info(
+            'select_context_after_raw_overrides',
+            payload_context_message_id=(payload.get('context') or {}).get('message_id'),
+            raw_override_context_message_id=_raw_override_context_message_id(req.raw_overrides),
+        )
+        _apply_select_context_ids(payload, context)
+        return payload
 
     def build_init(self, req: InitRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
         context = build_context('init', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
@@ -168,15 +199,50 @@ def _required(value: str | None, field_name: str) -> str:
     return value
 
 
-def _select_fulfillment_id(req: SelectRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> str:
-    fulfillment_id = _required(req.fulfillment_id, 'fulfillment_id')
-    if req.fulfillment_type == 'LUMPSUM' and fulfillment_id == 'ff_122' and _is_workbench_seller(bpp_id, bpp_uri):
-        return 'ff_123'
-    return fulfillment_id
+def _apply_select_context_ids(payload: dict[str, Any], context: dict[str, Any]) -> None:
+    payload_context = payload.setdefault('context', {})
+    payload_context['transaction_id'] = context['transaction_id']
+    payload_context['message_id'] = context['message_id']
+    log.info(
+        'select_context_finalized',
+        final_transaction_id=payload_context.get('transaction_id'),
+        final_select_message_id=payload_context.get('message_id'),
+    )
 
 
-def _is_workbench_seller(bpp_id: str | None, bpp_uri: str | None) -> bool:
-    return (bpp_id == 'staging-automation.ondc.org') or ('workbench.ondc.tech' in (bpp_uri or ''))
+def _raw_override_context_message_id(raw_overrides: dict[str, Any]) -> str | None:
+    context = raw_overrides.get('context') or {}
+    if not isinstance(context, dict):
+        return None
+    value = context.get('message_id')
+    return str(value) if value is not None else None
+
+
+def _apply_resolved_select_fulfillment(payload: dict[str, Any], fulfillment_id: str, fulfillment_type: str) -> None:
+    order = ((payload.get('message') or {}).get('order') or {})
+    items = order.get('items') or []
+    if items and isinstance(items[0], dict):
+        items[0]['fulfillment_ids'] = [fulfillment_id]
+    fulfillments = order.get('fulfillments') or []
+    if fulfillments and isinstance(fulfillments[0], dict):
+        fulfillments[0]['id'] = fulfillment_id
+        fulfillments[0]['type'] = fulfillment_type
+
+
+def _payload_fulfillment_id(payload: dict[str, Any]) -> str | None:
+    fulfillments = (((payload.get('message') or {}).get('order') or {}).get('fulfillments') or [])
+    if fulfillments and isinstance(fulfillments[0], dict):
+        value = fulfillments[0].get('id')
+        return str(value) if value is not None else None
+    return None
+
+
+def _payload_fulfillment_type(payload: dict[str, Any]) -> str | None:
+    fulfillments = (((payload.get('message') or {}).get('order') or {}).get('fulfillments') or [])
+    if fulfillments and isinstance(fulfillments[0], dict):
+        value = fulfillments[0].get('type')
+        return str(value) if value is not None else None
+    return None
 
 
 def _person_id(prefix: str, value: str | None) -> str:

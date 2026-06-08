@@ -2,7 +2,12 @@ from decimal import Decimal
 import pytest
 from app.schemas.mf import SearchRequest, SelectRequest
 from app.services.mf_mapper import MutualFundMapper
-from app.services.transaction_log import _extract_log_metadata, _extract_select_details_from_on_search, _validate_amount_thresholds
+from app.services.transaction_log import (
+    _extract_log_metadata,
+    _extract_select_details_from_on_search,
+    _validate_amount_thresholds,
+    find_transaction_message_sequence,
+)
 
 
 def test_search_mapper_builds_payload() -> None:
@@ -37,6 +42,7 @@ def test_lumpsum_select_mapper_builds_fis_210_payload() -> None:
     assert order['items'][0]['id'] == '12391'
     assert order['items'][0]['quantity']['selected']['measure'] == {'value': '3000', 'unit': 'INR'}
     assert order['items'][0]['fulfillment_ids'] == ['ff_122']
+    assert order['fulfillments'][0]['id'] == 'ff_122'
     assert order['fulfillments'][0]['type'] == 'LUMPSUM'
     assert order['fulfillments'][0]['customer']['person']['id'] == 'pan:arrpp7771n'
     assert order['fulfillments'][0]['agent']['person']['id'] == 'euin:E52432'
@@ -53,7 +59,7 @@ def test_lumpsum_select_mapper_builds_fis_210_payload() -> None:
     }
 
 
-def test_lumpsum_select_mapper_uses_workbench_example_fulfillment_id() -> None:
+def test_lumpsum_select_mapper_keeps_resolved_workbench_fulfillment_id() -> None:
     payload = MutualFundMapper().build_select(
         SelectRequest(
             transaction_id='txn-1',
@@ -71,9 +77,87 @@ def test_lumpsum_select_mapper_uses_workbench_example_fulfillment_id() -> None:
     )
 
     order = payload['message']['order']
-    assert order['items'][0]['fulfillment_ids'] == ['ff_123']
-    assert order['fulfillments'][0]['id'] == 'ff_123'
+    assert order['items'][0]['fulfillment_ids'] == ['ff_122']
+    assert order['fulfillments'][0]['id'] == 'ff_122'
     assert order['fulfillments'][0]['type'] == 'LUMPSUM'
+
+
+def test_lumpsum_select_mapper_does_not_override_resolved_fulfillment_id() -> None:
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+            raw_overrides={
+                'message': {
+                    'order': {
+                        'items': [{'id': '12391', 'fulfillment_ids': ['ff_123']}],
+                        'fulfillments': [{'id': 'ff_123', 'type': 'SIP'}],
+                    }
+                }
+            },
+        )
+    )
+
+    order = payload['message']['order']
+    assert order['items'][0]['fulfillment_ids'] == ['ff_122']
+    assert order['fulfillments'][0]['id'] == 'ff_122'
+    assert order['fulfillments'][0]['type'] == 'LUMPSUM'
+
+
+def test_select_mapper_generates_fresh_message_id_over_context_override() -> None:
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+            raw_overrides={'context': {'message_id': 'on-search-message', 'transaction_id': 'wrong-txn'}},
+        )
+    )
+
+    assert payload['context']['transaction_id'] == 'txn-1'
+    assert payload['context']['message_id'] != 'on-search-message'
+
+
+@pytest.mark.asyncio
+async def test_find_transaction_message_sequence_reads_distinct_action_ids() -> None:
+    class Row:
+        def __init__(self, action: str, direction: str, message_id: str) -> None:
+            self.action = action
+            self.direction = direction
+            self.message_id = message_id
+
+    class Rows:
+        def all(self) -> list[Row]:
+            return [
+                Row('select', 'outbound', 'msg-C'),
+                Row('on_search', 'inbound', 'msg-B'),
+                Row('search', 'outbound', 'msg-A'),
+                Row('search', 'outbound_response', 'msg-A'),
+            ]
+
+    class Db:
+        async def scalars(self, _statement: object) -> Rows:
+            return Rows()
+
+    sequence = await find_transaction_message_sequence(
+        Db(),  # type: ignore[arg-type]
+        transaction_id='txn-1',
+    )
+
+    assert sequence == {
+        'search_message_id': 'msg-A',
+        'on_search_message_id': 'msg-B',
+        'select_message_id': 'msg-C',
+    }
 
 
 def test_extract_select_details_requires_lumpsum_fulfillment() -> None:

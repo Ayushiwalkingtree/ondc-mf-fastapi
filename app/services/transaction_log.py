@@ -94,6 +94,37 @@ async def find_discovered_bpp(
     return None
 
 
+async def find_transaction_message_sequence(
+    db: AsyncSession | None,
+    *,
+    transaction_id: str,
+) -> dict[str, str | None]:
+    settings = get_settings()
+    sequence: dict[str, str | None] = {
+        'search_message_id': None,
+        'on_search_message_id': None,
+        'select_message_id': None,
+    }
+    if settings.NO_DATABASE or db is None:
+        return sequence
+
+    rows = (
+        await db.scalars(
+            select(OndcTransactionLog)
+            .where(OndcTransactionLog.transaction_id == transaction_id)
+            .order_by(OndcTransactionLog.created_at.desc())
+        )
+    ).all()
+    for row in rows:
+        if row.action == 'search' and row.direction == 'outbound' and not sequence['search_message_id']:
+            sequence['search_message_id'] = row.message_id
+        elif row.action == 'on_search' and row.direction == 'inbound' and not sequence['on_search_message_id']:
+            sequence['on_search_message_id'] = row.message_id
+        elif row.action == 'select' and row.direction == 'outbound' and not sequence['select_message_id']:
+            sequence['select_message_id'] = row.message_id
+    return sequence
+
+
 async def find_discovered_select_details(
     db: AsyncSession | None,
     *,
@@ -259,6 +290,7 @@ async def find_discovered_select_details(
             log.info(
                 'select_discovery_match_found',
                 row_id=str(row.id),
+                source_message_id=row.message_id,
                 bpp_id=match.get('bpp_id'),
                 bpp_uri=match.get('bpp_uri'),
                 resolved_provider_id=match.get('provider_id'),
@@ -267,6 +299,7 @@ async def find_discovered_select_details(
                 resolved_fulfillment_id=match.get('fulfillment_id'),
                 **criteria,
             )
+            match['source_message_id'] = row.message_id
             return {key: str(value) for key, value in match.items() if key != 'thresholds' and value is not None}
         log.info(
             'select_discovery_candidate_rejected',
