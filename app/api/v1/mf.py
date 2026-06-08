@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.security import verify_internal_api_key
@@ -10,6 +11,7 @@ from app.services.ondc_client import OndcClient
 from app.services.transaction_log import find_discovered_bpp, find_discovered_select_details, save_ondc_log
 
 router = APIRouter(prefix='/mf', tags=['mutual-funds'], dependencies=[Depends(verify_internal_api_key)])
+log = structlog.get_logger(__name__)
 mapper = MutualFundMapper()
 client = OndcClient()
 
@@ -42,6 +44,16 @@ async def search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) 
 
 @router.post('/select', response_model=OutboundResponse)
 async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | None = None, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
+    log.info(
+        'SELECT_ENDPOINT_ENTERED',
+        module_file=__file__,
+        transaction_id=req.transaction_id,
+        provider_id=req.provider_id,
+        scheme_item_id=req.scheme_item_id,
+        item_id=req.item_id,
+        fulfillment_id=req.fulfillment_id,
+        has_bpp_uri=bool(bpp_uri),
+    )
     req, bpp_uri, bpp_id = await _resolve_select(req, db, bpp_uri, bpp_id)
     payload = mapper.build_select(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     return await _send('select', bpp_uri.rstrip('/') + '/select', payload, db)
@@ -94,6 +106,16 @@ async def _resolve_select(
     bpp_uri: str | None,
     bpp_id: str | None,
 ) -> tuple[SelectRequest, str, str | None]:
+    log.info(
+        'RESOLVE_SELECT_ENTERED',
+        module_file=__file__,
+        transaction_id=req.transaction_id,
+        provider_id=req.provider_id,
+        scheme_item_id=req.scheme_item_id,
+        item_id=req.item_id,
+        fulfillment_id=req.fulfillment_id,
+        has_bpp_uri=bool(bpp_uri),
+    )
     if bpp_uri:
         if req.fulfillment_type == 'LUMPSUM' and not req.fulfillment_id:
             raise AppException(

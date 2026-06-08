@@ -7,7 +7,13 @@ engine: AsyncEngine | None = None
 AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
 
 if not settings.NO_DATABASE:
-    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+        connect_args={'server_settings': {'search_path': settings.DATABASE_SCHEMA}},
+    )
     AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

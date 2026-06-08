@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = '/api/v1'
 
     DATABASE_URL: str = 'postgresql+asyncpg://postgres:postgres@localhost:5432/ondc_mf'
+    DATABASE_SCHEMA: str = 'public'
     REDIS_URL: str = 'redis://localhost:6379/0'
     NO_DATABASE: bool = False
     DEBUG_PRINT_PAYLOADS: bool = False
@@ -50,6 +51,13 @@ class Settings(BaseSettings):
     def parse_debug(cls, value: object) -> object:
         if isinstance(value, str) and value.lower() in {'release', 'prod', 'production'}:
             return False
+        return value
+
+    @field_validator('DATABASE_SCHEMA')
+    @classmethod
+    def validate_database_schema(cls, value: str) -> str:
+        if not value.replace('_', '').isalnum() or value[0].isdigit():
+            raise ValueError('DATABASE_SCHEMA must be a simple PostgreSQL identifier')
         return value
 
 

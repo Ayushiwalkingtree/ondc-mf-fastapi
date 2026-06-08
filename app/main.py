@@ -1,8 +1,12 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+import subprocess
 from typing import AsyncGenerator
 import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 import structlog
@@ -34,6 +38,14 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     log.info('application_starting', app=settings.APP_NAME, env=settings.ENV)
+    log.info(
+        'APPLICATION_RUNTIME_FINGERPRINT',
+        git_hash=_git_hash(),
+        startup_timestamp=datetime.now(timezone.utc).isoformat(),
+        main_module_file=__file__,
+        mf_module_file=mf.__file__,
+        transaction_log_module_file=_transaction_log_module_file(),
+    )
     if settings.NO_DATABASE:
         log.info('database_startup_skipped', no_database=True)
     else:
@@ -52,6 +64,8 @@ async def _init_database_with_retry(attempts: int = 10, delay_seconds: float = 2
     for attempt in range(1, attempts + 1):
         try:
             async with engine.begin() as conn:
+                await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{settings.DATABASE_SCHEMA}"'))
+                await conn.execute(text(f'SET search_path TO "{settings.DATABASE_SCHEMA}"'))
                 await conn.run_sync(Base.metadata.create_all)
             return
         except Exception as exc:
@@ -89,3 +103,22 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def _git_hash() -> str | None:
+    try:
+        repo_root = Path(__file__).resolve().parents[1]
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=repo_root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
+
+
+def _transaction_log_module_file() -> str:
+    from app.services import transaction_log
+
+    return transaction_log.__file__
