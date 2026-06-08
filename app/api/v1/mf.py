@@ -22,8 +22,17 @@ client = OndcClient()
 
 
 async def _send(action: str, url: str, payload: dict, db: AsyncSession | None) -> OutboundResponse:
+    print(f'TRACE_SEND_ENTRY action={action}')
+    print(f'TRACE_SEND_ENTRY payload.context.transaction_id={payload.get("context", {}).get("transaction_id")}')
+    print(f'TRACE_SEND_ENTRY payload.context.message_id={payload.get("context", {}).get("message_id")}')
     await save_ondc_log(db, action=action, direction='outbound', payload=payload, status='SENT')
     context = payload['context']
+    print(f'TRACE_AFTER_SAVE_BEFORE_HTTP action={action}')
+    print(f'TRACE_AFTER_SAVE_BEFORE_HTTP payload.context.transaction_id={context.get("transaction_id")}')
+    print(f'TRACE_AFTER_SAVE_BEFORE_HTTP payload.context.message_id={context.get("message_id")}')
+    print(f'TRACE_BEFORE_HTTP_SEND action={action}')
+    print(f'TRACE_BEFORE_HTTP_SEND payload.context.transaction_id={context.get("transaction_id")}')
+    print(f'TRACE_BEFORE_HTTP_SEND payload.context.message_id={context.get("message_id")}')
     log.info(
         'outbound_http_send_context',
         action=action,
@@ -71,12 +80,25 @@ async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | N
     payload = mapper.build_select(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
     pre_send_sequence = await find_transaction_message_sequence(db, transaction_id=req.transaction_id)
     raw_override_message_id = _raw_override_context_message_id(req.raw_overrides)
+    search_message_id = pre_send_sequence.get('search_message_id')
+    on_search_message_id = pre_send_sequence.get('on_search_message_id')
+    generated_select_message_id = payload['context'].get('message_id')
+    print(f'TRACE_SELECT_IDS search_message_id={search_message_id}')
+    print(f'TRACE_SELECT_IDS on_search_message_id={on_search_message_id}')
+    print(f'TRACE_SELECT_IDS generated_select_message_id={generated_select_message_id}')
+    print(f'TRACE_SELECT_IDS payload.context.transaction_id={payload["context"].get("transaction_id")}')
+    print(f'TRACE_SELECT_IDS payload.context.message_id={payload["context"].get("message_id")}')
+    if search_message_id:
+        assert generated_select_message_id != search_message_id, (
+            'Select payload context.message_id equals search message_id before HTTP POST: '
+            f'{generated_select_message_id}'
+        )
     log.info(
         'select_message_id_sequence',
-        search_message_id=pre_send_sequence.get('search_message_id'),
-        on_search_message_id=pre_send_sequence.get('on_search_message_id'),
+        search_message_id=search_message_id,
+        on_search_message_id=on_search_message_id,
         raw_override_context_message_id=raw_override_message_id,
-        generated_select_message_id=payload['context'].get('message_id'),
+        generated_select_message_id=generated_select_message_id,
     )
     log.info(
         'select_context_final_before_send',

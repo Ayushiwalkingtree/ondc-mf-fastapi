@@ -66,6 +66,9 @@ class MutualFundMapper:
 
     def build_select(self, req: SelectRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
         context = build_context('select', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
+        print(f'TRACE_BUILD_SELECT generated_select_uuid={context.get("message_id")}')
+        print(f'TRACE_BUILD_SELECT transaction_id={context.get("transaction_id")}')
+        print(f'TRACE_BUILD_SELECT raw_override_context_message_id={_raw_override_context_message_id(req.raw_overrides)}')
         log.info(
             'select_context_generated',
             transaction_id=req.transaction_id,
@@ -107,6 +110,10 @@ class MutualFundMapper:
                 },
             }
             payload = deep_merge(payload, req.raw_overrides)
+            print(
+                'TRACE_BUILD_SELECT after_deep_merge_payload_context_message_id='
+                f'{(payload.get("context") or {}).get("message_id")}'
+            )
             log.info(
                 'select_context_after_raw_overrides',
                 payload_context_message_id=(payload.get('context') or {}).get('message_id'),
@@ -203,6 +210,8 @@ def _apply_select_context_ids(payload: dict[str, Any], context: dict[str, Any]) 
     payload_context = payload.setdefault('context', {})
     payload_context['transaction_id'] = context['transaction_id']
     payload_context['message_id'] = context['message_id']
+    print(f'TRACE_BUILD_SELECT finalized_payload_context_message_id={payload_context.get("message_id")}')
+    print(f'TRACE_BUILD_SELECT finalized_payload_context_transaction_id={payload_context.get("transaction_id")}')
     log.info(
         'select_context_finalized',
         final_transaction_id=payload_context.get('transaction_id'),
