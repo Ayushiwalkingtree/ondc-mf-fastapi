@@ -62,7 +62,23 @@ async def on_search(request: Request, payload: OndcCallbackPayload, db: AsyncSes
 
 @router.post('/on_select', response_model=AckResponse)
 async def on_select(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
-    return await _handle_callback('on_select', payload, db, authorization, await request.body())
+    raw_body = await request.body()
+    log.info(
+        'on_select_callback_entered',
+        transaction_id=payload.context.get('transaction_id'),
+        message_id=payload.context.get('message_id'),
+        has_authorization=bool(authorization),
+        raw_body_bytes=len(raw_body),
+    )
+    response = await _handle_callback('on_select', payload, db, authorization, raw_body)
+    log.info(
+        'on_select_callback_response',
+        transaction_id=payload.context.get('transaction_id'),
+        message_id=payload.context.get('message_id'),
+        ack_status=((response.message or {}).get('ack') or {}).get('status'),
+        has_error=response.error is not None,
+    )
+    return response
 
 
 @router.post('/on_init', response_model=AckResponse)
