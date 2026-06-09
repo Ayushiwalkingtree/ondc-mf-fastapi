@@ -20,6 +20,9 @@ log = structlog.get_logger(__name__)
 mapper = MutualFundMapper()
 client = OndcClient()
 
+SELECT_DEBUG_FALLBACK_BPP_ID = 'staging-automation.ondc.org'
+SELECT_DEBUG_FALLBACK_BPP_URI = 'https://workbench.ondc.tech/api-service/ONDC:FIS14/2.1.0/seller'
+
 
 async def _send(action: str, url: str, payload: dict, db: AsyncSession | None) -> OutboundResponse:
     print(f'TRACE_SEND_ENTRY action={action}')
@@ -78,7 +81,7 @@ async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | N
     )
     req, bpp_uri, bpp_id = await _resolve_select(req, db, bpp_uri, bpp_id)
     payload = mapper.build_select(req, bpp_id=bpp_id, bpp_uri=bpp_uri)
-    pre_send_sequence = await find_transaction_message_sequence(db, transaction_id=req.transaction_id)
+    pre_send_sequence = await _select_message_sequence(db, req.transaction_id)
     raw_override_message_id = _raw_override_context_message_id(req.raw_overrides)
     search_message_id = pre_send_sequence.get('search_message_id')
     on_search_message_id = pre_send_sequence.get('on_search_message_id')
@@ -118,7 +121,7 @@ async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | N
         },
     )
     response = await _send('select', bpp_uri.rstrip('/') + '/select', payload, db)
-    post_send_sequence = await find_transaction_message_sequence(db, transaction_id=req.transaction_id)
+    post_send_sequence = await _select_message_sequence(db, req.transaction_id)
     sequence_values = [
         post_send_sequence.get('search_message_id'),
         post_send_sequence.get('on_search_message_id'),
@@ -188,6 +191,7 @@ async def _resolve_select(
     log.info(
         'RESOLVE_SELECT_ENTERED',
         module_file=__file__,
+        select_debug_bypass_enabled=get_settings().ENABLE_SELECT_DEBUG_BYPASS,
         transaction_id=req.transaction_id,
         provider_id=req.provider_id,
         scheme_item_id=req.scheme_item_id,
@@ -202,7 +206,21 @@ async def _resolve_select(
                 status_code=400,
                 code='FULFILLMENT_ID_REQUIRED',
             )
+        if get_settings().ENABLE_SELECT_DEBUG_BYPASS:
+            _log_select_debug_bypass(
+                'explicit_bpp_uri_used_without_discovery',
+                req,
+                bpp_uri=bpp_uri,
+                bpp_id=bpp_id,
+            )
         return req, bpp_uri, bpp_id
+    settings = get_settings()
+    if not req.transaction_id and settings.ENABLE_SELECT_NEW_TXN_ID and settings.ENABLE_SELECT_DEBUG_BYPASS:
+        return _resolve_select_debug_bypass(
+            req,
+            reason='SELECT_ORIGINAL_TRANSACTION_ID_NOT_PROVIDED',
+            details='No request transaction_id provided. Skipping discovery because ENABLE_SELECT_NEW_TXN_ID=true and ENABLE_SELECT_DEBUG_BYPASS=true.',
+        )
     try:
         discovered = await find_discovered_select_details(
             db,
@@ -215,8 +233,20 @@ async def _resolve_select(
             amount=req.amount,
         )
     except ValueError as exc:
+        if get_settings().ENABLE_SELECT_DEBUG_BYPASS:
+            return _resolve_select_debug_bypass(
+                req,
+                reason='discovery_validation_failed',
+                details=str(exc),
+            )
         raise AppException(str(exc), status_code=400, code='SELECT_VALIDATION_FAILED') from exc
     if not discovered:
+        if get_settings().ENABLE_SELECT_DEBUG_BYPASS:
+            return _resolve_select_debug_bypass(
+                req,
+                reason='SELECT_DISCOVERY_NOT_FOUND',
+                details='No matching on_search catalog row found. Bypassing search/on_search dependency validation for local testing.',
+            )
         raise AppException(
             'Matching on_search catalog entry not found for provider/item/fulfillment. Wait for on_search or pass bpp_uri explicitly.',
             status_code=400,
@@ -235,6 +265,109 @@ async def _resolve_select(
         }
     )
     return resolved_req, discovered['bpp_uri'], bpp_id or discovered.get('bpp_id')
+
+
+async def _select_message_sequence(db: AsyncSession | None, transaction_id: str | None) -> dict[str, str | None]:
+    if not transaction_id:
+        return {
+            'search_message_id': None,
+            'on_search_message_id': None,
+            'select_message_id': None,
+        }
+    return await find_transaction_message_sequence(db, transaction_id=transaction_id)
+
+
+def _resolve_select_debug_bypass(
+    req: SelectRequest,
+    *,
+    reason: str,
+    details: str,
+) -> tuple[SelectRequest, str, str | None]:
+    debug_bpp_uri = SELECT_DEBUG_FALLBACK_BPP_URI
+    debug_bpp_id = SELECT_DEBUG_FALLBACK_BPP_ID
+    _log_select_debug_bypass(
+        'SELECT_DEBUG_BYPASS_USING_FALLBACK_BPP',
+        req,
+        bpp_uri=debug_bpp_uri,
+        bpp_id=debug_bpp_id,
+        reason=reason,
+        details=details,
+    )
+    if req.fulfillment_type == 'LUMPSUM' and not req.fulfillment_id:
+        _log_select_debug_bypass(
+            'debug_bypass_blocked_missing_fulfillment_id',
+            req,
+            bpp_uri=debug_bpp_uri,
+            bpp_id=debug_bpp_id,
+            reason=reason,
+            details=details,
+        )
+        raise AppException(
+            'ENABLE_SELECT_DEBUG_BYPASS=true, but LUMPSUM select still requires fulfillment_id to build the ONDC payload.',
+            status_code=400,
+            code='SELECT_DEBUG_BYPASS_FULFILLMENT_ID_REQUIRED',
+        )
+    _log_select_debug_bypass(
+        'debug_bypass_select_discovery',
+        req,
+        bpp_uri=debug_bpp_uri,
+        bpp_id=debug_bpp_id,
+        reason=reason,
+        details=details,
+    )
+    resolved_req = req.model_copy(
+        update={
+            'raw_overrides': _select_debug_raw_overrides(req.raw_overrides),
+        }
+    )
+    return resolved_req, debug_bpp_uri, debug_bpp_id
+
+
+def _select_debug_raw_overrides(raw_overrides: dict) -> dict:
+    overrides = dict(raw_overrides)
+    context = dict(overrides.get('context') or {})
+    context['bpp_id'] = SELECT_DEBUG_FALLBACK_BPP_ID
+    context['bpp_uri'] = SELECT_DEBUG_FALLBACK_BPP_URI
+    overrides['context'] = context
+    return overrides
+
+
+def _log_select_debug_bypass(
+    event: str,
+    req: SelectRequest,
+    *,
+    bpp_uri: str | None,
+    bpp_id: str | None,
+    reason: str | None = None,
+    details: str | None = None,
+) -> None:
+    print(
+        'SELECT_DEBUG_BYPASS '
+        f'event={event} '
+        f'reason={reason} '
+        f'transaction_id={req.transaction_id} '
+        f'provider_id={req.provider_id} '
+        f'item_id={req.item_id} '
+        f'scheme_item_id={req.scheme_item_id} '
+        f'fulfillment_id={req.fulfillment_id} '
+        f'bpp_uri={bpp_uri} '
+        f'bpp_id={bpp_id}'
+    )
+    log.warning(
+        event,
+        local_testing_only=True,
+        enable_select_debug_bypass=True,
+        reason=reason,
+        details=details,
+        transaction_id=req.transaction_id,
+        provider_id=req.provider_id,
+        scheme_item_id=req.scheme_item_id,
+        item_id=req.item_id,
+        fulfillment_id=req.fulfillment_id,
+        fulfillment_type=req.fulfillment_type,
+        bpp_uri=bpp_uri,
+        bpp_id=bpp_id,
+    )
 
 
 def _ack_status(ack: dict) -> str:

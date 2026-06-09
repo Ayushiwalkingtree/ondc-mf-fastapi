@@ -1,6 +1,8 @@
 from decimal import Decimal
 import pytest
-from app.schemas.mf import SearchRequest, SelectRequest
+from pydantic import ValidationError
+from app.core.config import get_settings
+from app.schemas.mf import InitRequest, SearchRequest, SelectRequest
 from app.services.mf_mapper import MutualFundMapper
 from app.services.transaction_log import (
     _extract_log_metadata,
@@ -8,6 +10,15 @@ from app.services.transaction_log import (
     _validate_amount_thresholds,
     find_transaction_message_sequence,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('DEBUG', 'false')
+    monkeypatch.setenv('ENABLE_SELECT_NEW_TXN_ID', 'false')
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_search_mapper_builds_payload() -> None:
@@ -125,6 +136,139 @@ def test_select_mapper_generates_fresh_message_id_over_context_override() -> Non
 
     assert payload['context']['transaction_id'] == 'txn-1'
     assert payload['context']['message_id'] != 'on-search-message'
+
+
+def test_select_mapper_reuses_search_transaction_id_when_flag_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('ENABLE_SELECT_NEW_TXN_ID', 'false')
+    get_settings.cache_clear()
+
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            transaction_id='search-txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+        )
+    )
+
+    assert payload['context']['transaction_id'] == 'search-txn-1'
+
+
+def test_select_mapper_generates_new_transaction_id_when_flag_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('ENABLE_SELECT_NEW_TXN_ID', 'true')
+    get_settings.cache_clear()
+
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            transaction_id='search-txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+        )
+    )
+
+    assert payload['context']['transaction_id'] != 'search-txn-1'
+
+
+def test_select_request_requires_transaction_id_when_new_txn_flag_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('ENABLE_SELECT_NEW_TXN_ID', 'false')
+    get_settings.cache_clear()
+
+    with pytest.raises(ValidationError, match='transaction_id is required'):
+        SelectRequest(
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+        )
+
+
+def test_select_mapper_generates_transaction_id_when_request_omits_it_and_flag_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv('ENABLE_SELECT_NEW_TXN_ID', 'true')
+    get_settings.cache_clear()
+
+    payload = MutualFundMapper().build_select(
+        SelectRequest(
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            arn='ARN-124567',
+        )
+    )
+
+    assert payload['context']['transaction_id']
+
+
+def test_init_mapper_builds_lumpsum_new_folio_payload() -> None:
+    payload = MutualFundMapper().build_init(
+        InitRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            fulfillment_id='ff_123',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            customer_ip='115.245.207.90',
+            customer_phone='9916599123',
+            arn='ARN-124567',
+            euin='E52432',
+            sub_broker_arn='ARN-123456',
+            form_id='investor_details_form',
+            form_submission_id='submission-1',
+            payment_mode='NETBANKING',
+            source_bank_code='icic0000047',
+            source_bank_account_number='004701563111',
+            source_bank_account_name='harish gupta',
+            source_bank_account_type='SAVINGS',
+        ),
+        bpp_id='staging-automation.ondc.org',
+        bpp_uri='https://workbench.ondc.tech/api-service/ONDC:FIS14/2.1.0/seller',
+    )
+
+    order = payload['message']['order']
+    assert payload['context']['action'] == 'init'
+    assert order['provider']['id'] == 'sellerapp_id'
+    assert order['items'][0]['id'] == '12391'
+    assert order['items'][0]['quantity']['selected']['measure'] == {'value': '3000', 'unit': 'INR'}
+    assert order['items'][0]['fulfillment_ids'] == ['ff_123']
+    assert order['fulfillments'][0]['id'] == 'ff_123'
+    assert order['fulfillments'][0]['customer']['person']['id'] == 'pan:arrpp7771n'
+    assert order['fulfillments'][0]['customer']['person']['creds'][0] == {
+        'id': '115.245.207.90',
+        'type': 'IP_ADDRESS',
+    }
+    assert order['xinput']['form']['id'] == 'investor_details_form'
+    assert order['xinput']['form_response']['submission_id'] == 'submission-1'
+    assert order['payments'][0]['params']['source_bank_code'] == 'icic0000047'
+    assert order['payments'][0]['tags'][1]['list'][0]['value'] == 'NETBANKING'
+
+
+def test_init_mapper_keeps_backward_compatible_order_wrapper() -> None:
+    payload = MutualFundMapper().build_init(
+        InitRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            item_id='12391',
+            investor={'name': 'legacy investor'},
+            order={'payments': [{'type': 'PRE_FULFILLMENT'}]},
+        )
+    )
+
+    order = payload['message']['order']
+    assert order['billing'] == {'name': 'legacy investor'}
+    assert order['payments'] == [{'type': 'PRE_FULFILLMENT'}]
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = 'redis://localhost:6379/0'
     NO_DATABASE: bool = False
     DEBUG_PRINT_PAYLOADS: bool = False
+    ENABLE_SELECT_DEBUG_BYPASS: bool = False
+    ENABLE_SELECT_NEW_TXN_ID: bool = False
 
     ONDC_ENV: str = 'staging'
     ONDC_DOMAIN: str = 'ONDC:FIS14'

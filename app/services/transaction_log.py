@@ -79,16 +79,14 @@ async def find_discovered_bpp(
         await db.scalars(
             select(OndcTransactionLog)
             .where(
-                OndcTransactionLog.action == 'on_search',
-                OndcTransactionLog.direction == 'inbound',
+                OndcTransactionLog.action.in_(['on_search', 'select', 'on_select', 'init', 'on_init']),
                 OndcTransactionLog.transaction_id == transaction_id,
-                OndcTransactionLog.status == 'ACK',
             )
             .order_by(OndcTransactionLog.created_at.desc())
         )
     ).all()
     for row in rows:
-        match = _extract_bpp_from_on_search(row.payload, provider_id)
+        match = _extract_bpp_from_payload(row.payload, provider_id)
         if match:
             return match
     return None
@@ -700,12 +698,20 @@ def _diagnose_select_discovery_rejection(
 
 
 def _extract_bpp_from_on_search(payload: dict[str, Any], provider_id: str | None) -> tuple[str, str | None] | None:
+    return _extract_bpp_from_payload(payload, provider_id)
+
+
+def _extract_bpp_from_payload(payload: dict[str, Any], provider_id: str | None) -> tuple[str, str | None] | None:
     context = payload.get('context') or {}
     bpp_uri = context.get('bpp_uri')
     bpp_id = context.get('bpp_id')
     if not bpp_uri:
         return None
     if not provider_id:
+        return str(bpp_uri), str(bpp_id) if bpp_id else None
+    order = (payload.get('message') or {}).get('order') or {}
+    provider = order.get('provider') if isinstance(order, dict) else None
+    if isinstance(provider, dict) and provider.get('id') == provider_id:
         return str(bpp_uri), str(bpp_id) if bpp_id else None
     catalog = (payload.get('message') or {}).get('catalog') or {}
     providers = catalog.get('providers') or []

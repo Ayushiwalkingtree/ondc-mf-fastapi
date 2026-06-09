@@ -1,6 +1,7 @@
 from typing import Any
 from urllib.parse import urlparse
 import structlog
+import uuid
 from app.schemas.mf import SearchRequest, SelectRequest, InitRequest, ConfirmRequest, StatusRequest
 from app.core.config import get_settings
 from app.services.context import build_context
@@ -65,7 +66,8 @@ class MutualFundMapper:
         return deep_merge(payload, req.raw_overrides)
 
     def build_select(self, req: SelectRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
-        context = build_context('select', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
+        select_transaction_id = _select_transaction_id(req.transaction_id)
+        context = build_context('select', transaction_id=select_transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
         print(f'TRACE_BUILD_SELECT generated_select_uuid={context.get("message_id")}')
         print(f'TRACE_BUILD_SELECT transaction_id={context.get("transaction_id")}')
         print(f'TRACE_BUILD_SELECT raw_override_context_message_id={_raw_override_context_message_id(req.raw_overrides)}')
@@ -151,13 +153,42 @@ class MutualFundMapper:
 
     def build_init(self, req: InitRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
         context = build_context('init', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
+        if req.order is None:
+            payload: dict[str, Any] = {
+                'context': context,
+                'message': {
+                    'order': {
+                        'provider': {'id': req.provider_id},
+                        'items': [
+                            {
+                                'id': req.item_id,
+                                'quantity': {
+                                    'selected': {
+                                        'measure': {
+                                            'value': _decimal_to_string(req.amount),
+                                            'unit': 'INR',
+                                        }
+                                    }
+                                },
+                                'fulfillment_ids': [_required(req.fulfillment_id, 'fulfillment_id')],
+                            }
+                        ],
+                        'fulfillments': [_build_init_fulfillment(req)],
+                        **_build_init_xinput(req),
+                        'payments': [_build_init_payment(req)],
+                        'tags': [_build_init_bap_terms_tag(req, context)],
+                    }
+                },
+            }
+            return deep_merge(payload, req.raw_overrides)
+
         payload: dict[str, Any] = {
             'context': context,
             'message': {
                 'order': {
                     'provider': {'id': req.provider_id},
                     'items': [{'id': req.item_id}],
-                    'billing': req.investor,
+                    **({'billing': req.investor} if req.investor else {}),
                     **req.order,
                 }
             },
@@ -204,6 +235,35 @@ def _required(value: str | None, field_name: str) -> str:
     if not value:
         raise ValueError(f'{field_name} is required')
     return value
+
+
+def _select_transaction_id(search_transaction_id: str | None) -> str:
+    settings = get_settings()
+    if settings.ENABLE_SELECT_NEW_TXN_ID:
+        select_transaction_id = str(uuid.uuid4())
+        _log_select_transaction_id_mode('GENERATE_NEW_TXN', search_transaction_id, select_transaction_id)
+        return select_transaction_id
+    if not search_transaction_id:
+        raise ValueError('transaction_id is required unless ENABLE_SELECT_NEW_TXN_ID=true')
+    _log_select_transaction_id_mode('REUSE_SEARCH_TXN', search_transaction_id, search_transaction_id)
+    return search_transaction_id
+
+
+def _log_select_transaction_id_mode(mode: str, search_transaction_id: str | None, select_transaction_id: str) -> None:
+    differs = search_transaction_id != select_transaction_id
+    print(
+        f'SELECT_TXN_ID_MODE={mode} '
+        f'original_search_transaction_id={search_transaction_id} '
+        f'final_select_transaction_id={select_transaction_id} '
+        f'transaction_ids_differ={differs}'
+    )
+    log.info(
+        'SELECT_TXN_ID_MODE',
+        mode=mode,
+        original_search_transaction_id=search_transaction_id,
+        final_select_transaction_id=select_transaction_id,
+        transaction_ids_differ=differs,
+    )
 
 
 def _apply_select_context_ids(payload: dict[str, Any], context: dict[str, Any]) -> None:
@@ -294,6 +354,110 @@ def _build_xinput(req: SelectRequest) -> dict[str, Any]:
             'form': {'id': _required(req.form_id, 'form_id')},
             'form_response': {'submission_id': req.form_submission_id},
         }
+    }
+
+
+def _build_init_fulfillment(req: InitRequest) -> dict[str, Any]:
+    fulfillment: dict[str, Any] = {
+        'id': _required(req.fulfillment_id, 'fulfillment_id'),
+        'type': req.fulfillment_type,
+        'customer': {
+            'person': {
+                'id': _person_id('pan', req.customer_pan),
+                'creds': [
+                    {
+                        'id': _required(req.customer_ip, 'customer_ip'),
+                        'type': 'IP_ADDRESS',
+                    }
+                ],
+            },
+            'contact': {'phone': _required(req.customer_phone, 'customer_phone')},
+        },
+        'agent': _build_init_agent(req),
+    }
+    return fulfillment
+
+
+def _build_init_agent(req: InitRequest) -> dict[str, Any]:
+    agent: dict[str, Any] = {
+        'organization': {
+            'creds': [
+                {
+                    'id': _required(req.arn, 'arn'),
+                    'type': 'ARN',
+                }
+            ]
+        }
+    }
+    if req.euin:
+        agent['person'] = {'id': _person_id('euin', req.euin)}
+    if req.sub_broker_arn:
+        agent['organization']['creds'].append(
+            {
+                'id': req.sub_broker_arn,
+                'type': 'SUB_BROKER_ARN',
+            }
+        )
+    return agent
+
+
+def _build_init_xinput(req: InitRequest) -> dict[str, Any]:
+    return {
+        'xinput': {
+            'form': {'id': _required(req.form_id, 'form_id')},
+            'form_response': {'submission_id': _required(req.form_submission_id, 'form_submission_id')},
+        }
+    }
+
+
+def _build_init_payment(req: InitRequest) -> dict[str, Any]:
+    return {
+        'collected_by': 'BPP',
+        'params': {
+            'amount': _decimal_to_string(req.amount),
+            'currency': 'INR',
+            'source_bank_code': _required(req.source_bank_code, 'source_bank_code'),
+            'source_bank_account_number': _required(req.source_bank_account_number, 'source_bank_account_number'),
+            'source_bank_account_name': _required(req.source_bank_account_name, 'source_bank_account_name'),
+        },
+        'type': 'PRE_FULFILLMENT',
+        'tags': [
+            {
+                'descriptor': {'name': 'Source bank account', 'code': 'SOURCE_BANK_ACCOUNT'},
+                'list': [
+                    {
+                        'descriptor': {'name': 'Account Type', 'code': 'ACCOUNT_TYPE'},
+                        'value': _required(req.source_bank_account_type, 'source_bank_account_type'),
+                    }
+                ],
+            },
+            {
+                'descriptor': {'name': 'Payment Method', 'code': 'PAYMENT_METHOD'},
+                'list': [
+                    {
+                        'descriptor': {'code': 'MODE'},
+                        'value': _required(req.payment_mode, 'payment_mode'),
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def _build_init_bap_terms_tag(req: InitRequest, context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'display': False,
+        'descriptor': {'name': 'BAP Terms of Engagement', 'code': 'BAP_TERMS'},
+        'list': [
+            {
+                'descriptor': {'name': 'Static Terms (Transaction Level)', 'code': 'STATIC_TERMS'},
+                'value': req.bap_terms_url or _default_bap_terms_url(context),
+            },
+            {
+                'descriptor': {'name': 'Offline Contract', 'code': 'OFFLINE_CONTRACT'},
+                'value': str(req.offline_contract).lower(),
+            },
+        ],
     }
 
 
