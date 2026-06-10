@@ -1,0 +1,18 @@
+.flow {
+  display: grid;
+  gap: 10px;
+}
+
+.api {
+  padding: 12px;
+  border-radius: 14px;
+  background: #0b1222;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #c4b5fd;
+}
+
+.api strong {
+  color: #93c5fd;
+}

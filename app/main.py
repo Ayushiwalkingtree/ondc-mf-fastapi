@@ -12,7 +12,7 @@ from starlette.responses import Response
 import structlog
 import uuid
 
-from app.api.v1 import health, registry, callbacks, mf
+from app.api.v1 import health, registry, callbacks, mf, websocket
 from app.core.config import get_settings
 from app.core.exceptions import AppException, app_exception_handler, unhandled_exception_handler
 from app.core.logging import configure_logging
@@ -98,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(registry.router)
     app.include_router(callbacks.router)
+    app.include_router(websocket.router)
     app.include_router(mf.router, prefix=settings.API_PREFIX)
     return app
 

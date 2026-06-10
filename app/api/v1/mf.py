@@ -5,7 +5,15 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.security import verify_internal_api_key
 from app.db import get_db
-from app.schemas.mf import SearchRequest, SelectRequest, InitRequest, ConfirmRequest, StatusRequest, OutboundResponse
+from app.schemas.mf import (
+    SearchInitiatedResponse,
+    SearchRequest,
+    SelectRequest,
+    InitRequest,
+    ConfirmRequest,
+    StatusRequest,
+    OutboundResponse,
+)
 from app.services.mf_mapper import MutualFundMapper
 from app.services.ondc_client import OndcClient
 from app.services.transaction_log import (
@@ -60,11 +68,12 @@ async def _send(action: str, url: str, payload: dict, db: AsyncSession | None) -
     )
 
 
-@router.post('/search', response_model=OutboundResponse)
-async def search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) -> OutboundResponse:
+@router.post('/search', response_model=SearchInitiatedResponse)
+async def search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) -> SearchInitiatedResponse:
     settings = get_settings()
     payload = mapper.build_search(req)
-    return await _send('search', settings.ONDC_GATEWAY_SEARCH_URL, payload, db)
+    response = await _send('search', settings.ONDC_GATEWAY_SEARCH_URL, payload, db)
+    return SearchInitiatedResponse(transaction_id=response.transaction_id)
 
 
 @router.post('/select', response_model=OutboundResponse)

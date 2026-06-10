@@ -1,0 +1,33 @@
+.panel {
+  display: grid;
+  gap: 14px;
+}
+
+.toggle {
+  justify-self: start;
+}
+
+.content {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.summary {
+  margin: 0;
+  padding: 14px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 12px;
+  background: #0b1222;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: #c4b5fd;
+  font-size: 12px;
+  line-height: 1.5;
+}

@@ -1,0 +1,47 @@
+.summary {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 14px;
+}
+
+.card {
+  background: rgba(14, 22, 40, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 13px;
+}
+
+.kv:last-child {
+  border-bottom: 0;
+}
+
+.label {
+  color: #94a3b8;
+}
+
+.value {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1050px) {
+  .summary {
+    position: relative;
+    top: auto;
+  }
+}

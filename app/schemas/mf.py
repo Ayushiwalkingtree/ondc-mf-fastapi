@@ -196,3 +196,9 @@ class OutboundResponse(BaseModel):
     message_id: str
     action: str
     ack: dict[str, Any]
+
+
+class SearchInitiatedResponse(BaseModel):
+    success: bool = True
+    transaction_id: str
+    status: Literal['SEARCH_INITIATED'] = 'SEARCH_INITIATED'

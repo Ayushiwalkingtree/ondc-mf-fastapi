@@ -8,6 +8,7 @@ from app.schemas.ondc import OndcCallbackPayload
 from app.schemas.common import AckResponse
 from app.services.registry import RegistryClient
 from app.services.transaction_log import save_ondc_log
+from app.services.websocket_manager import connection_manager
 from app.utils.ondc_auth import AuthHeader, parse_authorization_header, verify_authorization_header
 
 router = APIRouter(prefix='/ondc', tags=['ondc-callbacks'])
@@ -53,6 +54,14 @@ async def _handle_callback(
         payload=raw,
         status='ACK',
         subscriber_id=auth.subscriber_id,
+    )
+    await connection_manager.send_event(
+        raw.get('context', {}).get('transaction_id'),
+        {
+            'event': _event_name(action),
+            'transaction_id': raw.get('context', {}).get('transaction_id'),
+            'payload': raw,
+        },
     )
     log.info('ondc_callback_received', action=action, transaction_id=raw.get('context', {}).get('transaction_id'))
     return AckResponse()
@@ -112,6 +121,17 @@ def _log_callback_entry(action: str, raw: dict[str, Any]) -> None:
         transaction_id=context.get('transaction_id'),
         message_id=context.get('message_id'),
     )
+
+
+def _event_name(action: str) -> str:
+    return {
+        'on_search': 'ON_SEARCH_RECEIVED',
+        'on_select': 'ON_SELECT_RECEIVED',
+        'on_init': 'ON_INIT_RECEIVED',
+        'on_confirm': 'ON_CONFIRM_RECEIVED',
+        'on_status': 'ON_STATUS_RECEIVED',
+        'on_update': 'ON_UPDATE_RECEIVED',
+    }.get(action, f'{action.upper()}_RECEIVED')
 
 
 def _log_on_update_shape(raw: dict[str, Any]) -> None:

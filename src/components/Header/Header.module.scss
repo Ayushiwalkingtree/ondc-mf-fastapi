@@ -1,0 +1,46 @@
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 28px);
+  line-height: 1.2;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.pill {
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .topbar {
+    display: block;
+  }
+
+  .pill {
+    display: inline-flex;
+    margin-top: 12px;
+  }
+}
