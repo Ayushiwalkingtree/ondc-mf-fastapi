@@ -121,8 +121,68 @@ class ConfirmRequest(BaseModel):
     transaction_id: str
     provider_id: str
     order_id: str | None = None
-    payment: dict[str, Any]
+    item_id: str | None = None
+    fulfillment_id: str | None = None
+    fulfillment_type: Literal['LUMPSUM', 'SIP'] = 'LUMPSUM'
+    amount: Decimal | None = None
+    customer_pan: str | None = None
+    customer_ip: str | None = None
+    customer_phone: str | None = None
+    euin: str | None = None
+    arn: str | None = None
+    sub_broker_arn: str | None = None
+    form_id: str | None = None
+    form_submission_id: str | None = None
+    quote_id: str | None = None
+    payment_id: str | None = None
+    payment_status: str = 'NOT-PAID'
+    payment_mode: str | None = None
+    source_bank_code: str | None = None
+    source_bank_account_number: str | None = None
+    source_bank_account_name: str | None = None
+    source_bank_account_type: str | None = None
+    bap_terms_url: str | None = None
+    bpp_terms_url: str | None = None
+    offline_contract: bool = True
+    payment: dict[str, Any] | None = None
     raw_overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise ValueError('amount must be greater than 0')
+        return value
+
+    @model_validator(mode='after')
+    def validate_confirm(self) -> 'ConfirmRequest':
+        if self.payment is not None:
+            return self
+        missing = [
+            field
+            for field in (
+                'order_id',
+                'item_id',
+                'fulfillment_id',
+                'amount',
+                'customer_pan',
+                'customer_ip',
+                'customer_phone',
+                'arn',
+                'form_id',
+                'form_submission_id',
+                'payment_id',
+                'payment_mode',
+                'source_bank_code',
+                'source_bank_account_number',
+                'source_bank_account_name',
+                'source_bank_account_type',
+            )
+            if getattr(self, field) in (None, '')
+        ]
+        if missing:
+            raise ValueError(f'Confirm requires: {", ".join(missing)}')
+        return self
 
 
 class StatusRequest(BaseModel):

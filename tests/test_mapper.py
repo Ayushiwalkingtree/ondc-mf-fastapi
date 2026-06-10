@@ -2,7 +2,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 from app.core.config import get_settings
-from app.schemas.mf import InitRequest, SearchRequest, SelectRequest
+from app.schemas.mf import ConfirmRequest, InitRequest, SearchRequest, SelectRequest
 from app.services.mf_mapper import MutualFundMapper
 from app.services.transaction_log import (
     _extract_log_metadata,
@@ -269,6 +269,67 @@ def test_init_mapper_keeps_backward_compatible_order_wrapper() -> None:
     order = payload['message']['order']
     assert order['billing'] == {'name': 'legacy investor'}
     assert order['payments'] == [{'type': 'PRE_FULFILLMENT'}]
+
+
+def test_confirm_mapper_builds_lumpsum_new_folio_payload() -> None:
+    payload = MutualFundMapper().build_confirm(
+        ConfirmRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            order_id='mfpp_213adf123af',
+            item_id='12391',
+            fulfillment_id='ff_122',
+            amount=Decimal('3000'),
+            customer_pan='ARRPP7771N',
+            customer_ip='115.245.207.90',
+            customer_phone='9916599123',
+            arn='ARN-124567',
+            euin='E52432',
+            sub_broker_arn='ARN-123456',
+            form_id='investor_details_form',
+            form_submission_id='submission-1',
+            payment_id='pmt_123',
+            payment_mode='NETBANKING',
+            source_bank_code='icic0000047',
+            source_bank_account_number='004701563111',
+            source_bank_account_name='harish gupta',
+            source_bank_account_type='SAVINGS',
+            bpp_terms_url='https://sellerapp.com/legal/ondc:fis14/static_terms?v=0.1',
+        ),
+        bpp_id='staging-automation.ondc.org',
+        bpp_uri='https://workbench.ondc.tech/api-service/ONDC:FIS14/2.1.0/seller',
+    )
+
+    order = payload['message']['order']
+    assert payload['context']['action'] == 'confirm'
+    assert order['id'] == 'mfpp_213adf123af'
+    assert order['provider']['id'] == 'sellerapp_id'
+    assert order['items'][0]['id'] == '12391'
+    assert order['items'][0]['fulfillment_ids'] == ['ff_122']
+    assert order['items'][0]['payment_ids'] == ['pmt_123']
+    assert order['fulfillments'][0]['customer']['person']['id'] == 'pan:arrpp7771n'
+    assert order['xinput']['form']['id'] == 'investor_details_form'
+    assert order['xinput']['form_response']['submission_id'] == 'submission-1'
+    assert order['payments'][0]['id'] == 'pmt_123'
+    assert order['payments'][0]['status'] == 'NOT-PAID'
+    assert order['payments'][0]['tags'][1]['list'][0]['value'] == 'NETBANKING'
+    assert [tag['descriptor']['code'] for tag in order['tags']] == ['BAP_TERMS', 'BPP_TERMS']
+
+
+def test_confirm_mapper_keeps_backward_compatible_payment_contract() -> None:
+    payload = MutualFundMapper().build_confirm(
+        ConfirmRequest(
+            transaction_id='txn-1',
+            provider_id='sellerapp_id',
+            order_id='order-1',
+            payment={'id': 'pmt_1', 'type': 'PRE_FULFILLMENT'},
+        )
+    )
+
+    order = payload['message']['order']
+    assert order['id'] == 'order-1'
+    assert order['provider']['id'] == 'sellerapp_id'
+    assert order['payments'] == [{'id': 'pmt_1', 'type': 'PRE_FULFILLMENT'}]
 
 
 @pytest.mark.asyncio

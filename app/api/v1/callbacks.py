@@ -23,6 +23,9 @@ async def _handle_callback(
     raw_body: bytes,
 ) -> AckResponse:
     raw = payload.model_dump(exclude_none=True)
+    _log_callback_entry(action, raw)
+    if action == 'on_update':
+        _log_on_update_shape(raw)
     settings = get_settings()
     if settings.DEBUG_PRINT_PAYLOADS:
         print('=== ONDC CALLBACK AUTHORIZATION ===')
@@ -94,6 +97,52 @@ async def on_confirm(request: Request, payload: OndcCallbackPayload, db: AsyncSe
 @router.post('/on_status', response_model=AckResponse)
 async def on_status(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
     return await _handle_callback('on_status', payload, db, authorization, await request.body())
+
+
+@router.post('/on_update', response_model=AckResponse)
+async def on_update(request: Request, payload: OndcCallbackPayload, db: AsyncSession | None = Depends(get_db), authorization: str | None = Header(default=None)) -> AckResponse:
+    return await _handle_callback('on_update', payload, db, authorization, await request.body())
+
+
+def _log_callback_entry(action: str, raw: dict[str, Any]) -> None:
+    context = raw.get('context') or {}
+    log.info(
+        'ONDC CALLBACK',
+        action=action,
+        transaction_id=context.get('transaction_id'),
+        message_id=context.get('message_id'),
+    )
+
+
+def _log_on_update_shape(raw: dict[str, Any]) -> None:
+    context = raw.get('context') or {}
+    order = ((raw.get('message') or {}).get('order') or {})
+    fulfillments = order.get('fulfillments') or []
+    payments = order.get('payments') or []
+    first_fulfillment = fulfillments[0] if fulfillments and isinstance(fulfillments[0], dict) else {}
+    first_payment = payments[0] if payments and isinstance(payments[0], dict) else {}
+    fulfillment_state = ((first_fulfillment.get('state') or {}).get('descriptor') or {}).get('code')
+    payment_state = first_payment.get('status')
+    checks = {
+        'context.action': context.get('action') == 'on_update',
+        'message.order.id': bool(order.get('id')),
+        'message.order.status': bool(order.get('status')),
+        'message.order.fulfillments[0].state.descriptor.code': bool(fulfillment_state),
+        'message.order.payments[0].status': bool(payment_state),
+        'message.order.updated_at': bool(order.get('updated_at')),
+    }
+    missing = [field for field, ok in checks.items() if not ok]
+    log.info(
+        'on_update_payload_schema_check',
+        valid=not missing,
+        missing_fields=missing,
+        context_action=context.get('action'),
+        order_id=order.get('id'),
+        order_status=order.get('status'),
+        fulfillment_state=fulfillment_state,
+        payment_state=payment_state,
+        updated_at=order.get('updated_at'),
+    )
 
 
 async def _verify_callback_signature(raw: dict[str, Any], raw_body: bytes, authorization: str | None) -> AuthHeader:

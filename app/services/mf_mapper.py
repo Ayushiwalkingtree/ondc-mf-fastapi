@@ -197,6 +197,40 @@ class MutualFundMapper:
 
     def build_confirm(self, req: ConfirmRequest, bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
         context = build_context('confirm', transaction_id=req.transaction_id, bpp_id=bpp_id, bpp_uri=bpp_uri)
+        if req.payment is None:
+            payload: dict[str, Any] = {
+                'context': context,
+                'message': {
+                    'order': {
+                        'id': _required(req.order_id, 'order_id'),
+                        'provider': {'id': req.provider_id},
+                        'items': [
+                            {
+                                'id': _required(req.item_id, 'item_id'),
+                                'quantity': {
+                                    'selected': {
+                                        'measure': {
+                                            'value': _decimal_to_string(req.amount),
+                                            'unit': 'INR',
+                                        }
+                                    }
+                                },
+                                'fulfillment_ids': [_required(req.fulfillment_id, 'fulfillment_id')],
+                                'payment_ids': [_required(req.payment_id, 'payment_id')],
+                            }
+                        ],
+                        'fulfillments': [_build_confirm_fulfillment(req)],
+                        **_build_confirm_xinput(req),
+                        'payments': [_build_confirm_payment(req)],
+                        'tags': [
+                            _build_confirm_bap_terms_tag(req, context),
+                            _build_confirm_bpp_terms_tag(req, context),
+                        ],
+                    }
+                },
+            }
+            return deep_merge(payload, req.raw_overrides)
+
         payload: dict[str, Any] = {
             'context': context,
             'message': {
@@ -357,6 +391,128 @@ def _build_xinput(req: SelectRequest) -> dict[str, Any]:
     }
 
 
+def _build_confirm_fulfillment(req: ConfirmRequest) -> dict[str, Any]:
+    return {
+        'id': _required(req.fulfillment_id, 'fulfillment_id'),
+        'type': req.fulfillment_type,
+        'customer': {
+            'person': {
+                'id': _person_id('pan', req.customer_pan),
+                'creds': [
+                    {
+                        'id': _required(req.customer_ip, 'customer_ip'),
+                        'type': 'IP_ADDRESS',
+                    }
+                ],
+            },
+            'contact': {'phone': _required(req.customer_phone, 'customer_phone')},
+        },
+        'agent': _build_confirm_agent(req),
+    }
+
+
+def _build_confirm_agent(req: ConfirmRequest) -> dict[str, Any]:
+    agent: dict[str, Any] = {
+        'organization': {
+            'creds': [
+                {
+                    'id': _required(req.arn, 'arn'),
+                    'type': 'ARN',
+                }
+            ]
+        }
+    }
+    if req.euin:
+        agent['person'] = {'id': _person_id('euin', req.euin)}
+    if req.sub_broker_arn:
+        agent['organization']['creds'].append(
+            {
+                'id': req.sub_broker_arn,
+                'type': 'SUB_BROKER_ARN',
+            }
+        )
+    return agent
+
+
+def _build_confirm_xinput(req: ConfirmRequest) -> dict[str, Any]:
+    return {
+        'xinput': {
+            'form': {'id': _required(req.form_id, 'form_id')},
+            'form_response': {'submission_id': _required(req.form_submission_id, 'form_submission_id')},
+        }
+    }
+
+
+def _build_confirm_payment(req: ConfirmRequest) -> dict[str, Any]:
+    return {
+        'id': _required(req.payment_id, 'payment_id'),
+        'collected_by': 'BPP',
+        'status': req.payment_status,
+        'params': {
+            'amount': _decimal_to_string(req.amount),
+            'currency': 'INR',
+            'source_bank_code': _required(req.source_bank_code, 'source_bank_code'),
+            'source_bank_account_number': _required(req.source_bank_account_number, 'source_bank_account_number'),
+            'source_bank_account_name': _required(req.source_bank_account_name, 'source_bank_account_name'),
+        },
+        'type': 'PRE_FULFILLMENT',
+        'tags': [
+            {
+                'descriptor': {'name': 'Source bank account', 'code': 'SOURCE_BANK_ACCOUNT'},
+                'list': [
+                    {
+                        'descriptor': {'name': 'Account Type', 'code': 'ACCOUNT_TYPE'},
+                        'value': _required(req.source_bank_account_type, 'source_bank_account_type'),
+                    }
+                ],
+            },
+            {
+                'descriptor': {'name': 'Payment Method', 'code': 'PAYMENT_METHOD'},
+                'list': [
+                    {
+                        'descriptor': {'code': 'MODE'},
+                        'value': _required(req.payment_mode, 'payment_mode'),
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def _build_confirm_bap_terms_tag(req: ConfirmRequest, context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'display': False,
+        'descriptor': {'name': 'BAP Terms of Engagement', 'code': 'BAP_TERMS'},
+        'list': [
+            {
+                'descriptor': {'name': 'Static Terms (Transaction Level)', 'code': 'STATIC_TERMS'},
+                'value': req.bap_terms_url or _default_bap_terms_url(context),
+            },
+            {
+                'descriptor': {'name': 'Offline Contract', 'code': 'OFFLINE_CONTRACT'},
+                'value': str(req.offline_contract).lower(),
+            },
+        ],
+    }
+
+
+def _build_confirm_bpp_terms_tag(req: ConfirmRequest, context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'display': False,
+        'descriptor': {'name': 'BPP Terms of Engagement', 'code': 'BPP_TERMS'},
+        'list': [
+            {
+                'descriptor': {'name': 'Static Terms (Transaction Level)', 'code': 'STATIC_TERMS'},
+                'value': req.bpp_terms_url or _default_bpp_terms_url(context),
+            },
+            {
+                'descriptor': {'name': 'Offline Contract', 'code': 'OFFLINE_CONTRACT'},
+                'value': str(req.offline_contract).lower(),
+            },
+        ],
+    }
+
+
 def _build_init_fulfillment(req: InitRequest) -> dict[str, Any]:
     fulfillment: dict[str, Any] = {
         'id': _required(req.fulfillment_id, 'fulfillment_id'),
@@ -482,5 +638,14 @@ def _default_bap_terms_url(context: dict[str, Any]) -> str:
     settings = get_settings()
     parsed = urlparse(settings.ONDC_SUBSCRIBER_URI)
     base = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme and parsed.netloc else f'https://{settings.ONDC_SUBSCRIBER_ID}'
+    domain = str(context.get('domain') or settings.ONDC_DOMAIN).lower()
+    return f'{base}/legal/{domain}/static_terms?v=0.1'
+
+
+def _default_bpp_terms_url(context: dict[str, Any]) -> str:
+    settings = get_settings()
+    bpp_uri = str(context.get('bpp_uri') or '')
+    parsed = urlparse(bpp_uri)
+    base = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme and parsed.netloc else 'https://sellerapp.com'
     domain = str(context.get('domain') or settings.ONDC_DOMAIN).lower()
     return f'{base}/legal/{domain}/static_terms?v=0.1'
