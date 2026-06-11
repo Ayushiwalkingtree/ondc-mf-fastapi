@@ -1,0 +1,383 @@
+.wizardShell {
+  width: min(100%, 1400px);
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 18px;
+  margin: 0 auto;
+}
+
+.sidebar {
+  align-self: start;
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(14, 22, 40, 0.82);
+}
+
+.sidebarHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.sidebarHeader span {
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebarHeader strong {
+  color: #e5eefb;
+  font-size: 15px;
+}
+
+.stepList {
+  display: grid;
+  gap: 6px;
+}
+
+.stepButton {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.stepButton:hover,
+.activeStep {
+  border-color: rgba(96, 165, 250, 0.32);
+  background: rgba(59, 130, 246, 0.12);
+  color: #eff6ff;
+}
+
+.stepIcon {
+  color: #86efac;
+  font-weight: 900;
+}
+
+.mainArea {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(14, 22, 40, 0.78);
+}
+
+.stageBar {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stageBar span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stageBar .activeStage {
+  border-color: rgba(134, 239, 172, 0.34);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+.devToggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.devToggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.stepHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.stepHeader p {
+  margin: 0 0 5px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.stepHeader h2 {
+  margin: 0 0 6px;
+  color: #f8fafc;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.stepHeader span {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.compactScheme {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.24);
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.compactScheme strong,
+.compactScheme span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compactScheme strong {
+  color: #dcfce7;
+  font-size: 13px;
+}
+
+.compactScheme span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.stepContent {
+  display: grid;
+  gap: 16px;
+}
+
+.fullFrame,
+.paymentFrame {
+  width: 100%;
+  min-height: 680px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.paymentFrame {
+  min-height: 640px;
+}
+
+.timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.timelineItem {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(11, 18, 34, 0.58);
+}
+
+.timelineItem span {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.timelineItem strong {
+  color: #e5eefb;
+  font-size: 14px;
+}
+
+.timelineItem pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.schemeDetails {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.schemeHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.schemeHeader p {
+  margin: 0 0 6px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.schemeHeader h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.detailSection {
+  display: grid;
+  gap: 12px;
+}
+
+.detailSection h4 {
+  margin: 0;
+  color: #e5eefb;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+
+.detailRow {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(11, 18, 34, 0.58);
+}
+
+.detailRow span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detailRow strong {
+  min-width: 0;
+  color: #e5eefb;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ruleList {
+  display: grid;
+  gap: 10px;
+}
+
+.ruleBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.subSection {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.subSection h5 {
+  margin: 0;
+  color: #c4b5fd;
+  font-size: 13px;
+}
+
+.documentLinks {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.documentLinks a,
+.documentLinks span {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 11px;
+  border: 1px solid rgba(143, 181, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(79, 140, 255, 0.1);
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.documentLinks span {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
+}
+
+.emptyState {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+@media (max-width: 680px) {
+  .wizardShell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+  }
+
+  .topBar,
+  .stepHeader,
+  .compactScheme {
+    display: grid;
+  }
+
+  .schemeHeader {
+    display: grid;
+  }
+
+  .schemeHeader button {
+    width: 100%;
+  }
+}

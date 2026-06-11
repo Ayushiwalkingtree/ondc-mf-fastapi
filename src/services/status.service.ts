@@ -4,12 +4,22 @@ import type { OndcApiResponse, TrackingEvent } from '../types/ondc';
 export const getOrderStatus = async (
   buyerOrderId: string,
   transactionId?: string,
+  bpp?: { bppId?: string; bppUri?: string },
 ): Promise<OndcApiResponse<TrackingEvent[]>> => {
-  const response = await ondcApi.post('/mf/status', {
-    transaction_id: transactionId,
-    order_id: buyerOrderId,
-    raw_overrides: {},
-  });
+  const response = await ondcApi.post(
+    '/mf/status',
+    {
+      transaction_id: transactionId,
+      order_id: buyerOrderId,
+      raw_overrides: {},
+    },
+    {
+      params: {
+        bpp_id: bpp?.bppId,
+        bpp_uri: bpp?.bppUri,
+      },
+    },
+  );
 
   return {
     action: '/status',

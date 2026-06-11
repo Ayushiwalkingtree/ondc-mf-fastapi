@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', case_sensitive=True)
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', case_sensitive=True, extra='ignore')
 
     APP_NAME: str = 'ondc-mf-fastapi'
     ENV: str = 'local'
@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     DEBUG_PRINT_PAYLOADS: bool = False
     ENABLE_SELECT_DEBUG_BYPASS: bool = False
     ENABLE_SELECT_NEW_TXN_ID: bool = False
+    CORS_ALLOW_ORIGINS: str = (
+        'http://localhost:5173,'
+        'http://127.0.0.1:5173,'
+        'http://localhost:3000,'
+        'http://127.0.0.1:3000,'
+        'https://ondcapi.walkingtree.tech'
+    )
+    CORS_ALLOW_ORIGIN_REGEX: str | None = r'https?://(localhost|127\.0\.0\.1)(:\d+)?'
 
     ONDC_ENV: str = 'staging'
     ONDC_DOMAIN: str = 'ONDC:FIS14'
@@ -51,8 +59,12 @@ class Settings(BaseSettings):
     @field_validator('DEBUG', mode='before')
     @classmethod
     def parse_debug(cls, value: object) -> object:
-        if isinstance(value, str) and value.lower() in {'release', 'prod', 'production'}:
-            return False
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {'debug', 'true', '1', 'yes', 'on'}:
+                return True
+            if normalized in {'release', 'prod', 'production', 'false', '0', 'no', 'off', 'warn', 'warning', 'info', 'error'}:
+                return False
         return value
 
     @field_validator('DATABASE_SCHEMA')
@@ -61,6 +73,14 @@ class Settings(BaseSettings):
         if not value.replace('_', '').isalnum() or value[0].isdigit():
             raise ValueError('DATABASE_SCHEMA must be a simple PostgreSQL identifier')
         return value
+
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.CORS_ALLOW_ORIGINS.split(',')
+            if origin.strip()
+        ]
 
 
 @lru_cache

@@ -48,7 +48,12 @@ export interface OndcProvider {
 export interface OndcItem {
   id?: string;
   descriptor?: OndcDescriptor;
+  creator?: {
+    descriptor?: OndcDescriptor;
+    [key: string]: unknown;
+  };
   category_id?: string;
+  parent_item_id?: string;
   fulfillment_ids?: string[];
   fulfillment_id?: string;
   tags?: OndcTag[];
@@ -99,12 +104,51 @@ export interface NfoData {
   reopenDate?: string;
 }
 
+export interface LumpsumRules {
+  minimumAmount?: string;
+  maximumAmount?: string;
+  amountMultiples?: string;
+}
+
+export interface SipRule {
+  id?: string;
+  type?: string;
+  frequency?: string;
+  frequencyDayType?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  installmentMin?: string;
+  installmentMax?: string;
+}
+
+export interface RedemptionRules {
+  minUnits?: string;
+  maxUnits?: string;
+}
+
+export interface SchemeRules {
+  lumpsum?: LumpsumRules;
+  sip: SipRule[];
+  redemption?: RedemptionRules;
+  instantRedemption?: RedemptionRules;
+}
+
+export interface ParsedFulfillmentDetails {
+  id?: string;
+  type?: string;
+  label: string;
+  frequency?: string;
+  thresholds: ThresholdValue[];
+}
+
 export interface ParsedScheme {
   id: string;
   name: string;
   amcName?: string;
   providerId: string;
   providerName: string;
+  bppId?: string;
+  bppUri?: string;
   schemeId?: string;
   schemeItemId?: string;
   itemId: string;
@@ -118,11 +162,14 @@ export interface ParsedScheme {
   idcwOption?: string;
   status?: string;
   lockInPeriod?: string;
+  entryLoad?: string;
   exitLoad?: string;
   nfo: NfoData;
   documents: SchemeDocuments;
+  rules: SchemeRules;
   fulfillmentIds: string[];
   fulfillmentTypes: string[];
+  fulfillmentDetails: ParsedFulfillmentDetails[];
   transactionChips: string[];
   thresholds: ThresholdValue[];
   rawProvider: OndcProvider;

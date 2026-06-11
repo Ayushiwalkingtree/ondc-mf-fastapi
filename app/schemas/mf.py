@@ -28,6 +28,9 @@ class SelectRequest(BaseModel):
     offline_contract: bool = True
     form_id: str | None = None
     form_submission_id: str | None = None
+    session_id: str | None = None
+    flow_id: str | None = None
+    workbench_transaction_id: str | None = None
     raw_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator('amount')

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 from app.core.config import get_settings
@@ -129,7 +130,8 @@ async def select(req: SelectRequest, bpp_uri: str | None = None, bpp_id: str | N
             'context.message_id': payload['context'].get('message_id'),
         },
     )
-    response = await _send('select', bpp_uri.rstrip('/') + '/select', payload, db)
+    select_url = _append_workbench_session_params(bpp_uri.rstrip('/') + '/select', req)
+    response = await _send('select', select_url, payload, db)
     post_send_sequence = await _select_message_sequence(db, req.transaction_id)
     sequence_values = [
         post_send_sequence.get('search_message_id'),
@@ -390,3 +392,19 @@ def _raw_override_context_message_id(raw_overrides: dict) -> str | None:
         return None
     value = context.get('message_id')
     return str(value) if value is not None else None
+
+
+def _append_workbench_session_params(url: str, req: SelectRequest) -> str:
+    params = {
+        'session_id': req.session_id,
+        'flow_id': req.flow_id,
+        'transaction_id': req.workbench_transaction_id,
+    }
+    present_params = {key: value for key, value in params.items() if value}
+    if not present_params:
+        return url
+
+    parsed = urlsplit(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(present_params)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))

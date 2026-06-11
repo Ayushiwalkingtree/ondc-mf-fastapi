@@ -1,10 +1,23 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { InvestorDetails } from '../types/investor';
 import type { OndcRealtimeEvent, OrderDetails, SearchStatus, SelectQuote, WebSocketStatus } from '../types/ondc';
 import type { OndcCategory, OndcFulfillment, OndcProvider, ParsedCatalog, ParsedScheme } from '../types/scheme';
 import type { TransactionDetails } from '../types/transaction';
 import type { SelectedSchemePayload } from '../utils/schemeMapper';
 import { amountToWords } from '../utils/formatters';
+
+export interface InvestorFormResponse {
+  success?: boolean;
+  submission_id?: string;
+  [key: string]: unknown;
+}
+
+export interface WorkbenchSession {
+  sessionId?: string;
+  flowId?: string;
+  transactionId?: string;
+}
 
 const defaultInvestorDetails: InvestorDetails = {
   investorName: 'Aarav Sharma',
@@ -33,6 +46,9 @@ const defaultTransactionDetails: TransactionDetails = {
 interface MfJourneyState {
   investorDetails: InvestorDetails;
   searchTransactionId?: string;
+  originalSelectTransactionId?: string;
+  investmentTransactionId?: string;
+  secondSelectTransactionId?: string;
   searchStatus: SearchStatus;
   websocketStatus: WebSocketStatus;
   searchStartedAt?: string;
@@ -46,6 +62,19 @@ interface MfJourneyState {
   selectedScheme?: ParsedScheme;
   selectedSchemePayload?: SelectedSchemePayload;
   selectedQuote?: SelectQuote;
+  onSelectPayload?: unknown;
+  finalOnSelectPayload?: unknown;
+  initPayload?: unknown;
+  onInitPayload?: unknown;
+  confirmPayload?: unknown;
+  onConfirmPayload?: unknown;
+  statusPayload?: unknown;
+  onStatusPayload?: unknown;
+  investorFormResponse?: InvestorFormResponse;
+  formCompleted: boolean;
+  formSubmissionId?: string;
+  workbenchSession?: WorkbenchSession;
+  secondSelectPayload?: unknown;
   transactionDetails: TransactionDetails;
   orderDetails?: OrderDetails;
   currentStep: number;
@@ -57,6 +86,20 @@ interface MfJourneyState {
   setSearchError: (error: string) => void;
   setWebsocketStatus: (status: WebSocketStatus) => void;
   recordRealtimeEvent: (event: OndcRealtimeEvent) => void;
+  setOriginalSelectTransactionId: (transactionId: string) => void;
+  setInvestmentTransactionId: (transactionId: string) => void;
+  setSecondSelectTransactionId: (transactionId: string) => void;
+  setOnSelectPayload: (payload: unknown, final?: boolean) => void;
+  setInitPayload: (payload: unknown) => void;
+  setOnInitPayload: (payload: unknown) => void;
+  setConfirmPayload: (payload: unknown) => void;
+  setOnConfirmPayload: (payload: unknown) => void;
+  setStatusPayload: (payload: unknown) => void;
+  setOnStatusPayload: (payload: unknown) => void;
+  setInvestorFormResponse: (response: InvestorFormResponse) => void;
+  setFormSubmissionId: (submissionId: string) => void;
+  setWorkbenchSession: (session: WorkbenchSession) => void;
+  setSecondSelectPayload: (payload: unknown) => void;
   setSelectedScheme: (scheme: ParsedScheme, selection?: SelectedSchemePayload, quote?: SelectQuote) => void;
   setTransactionDetails: (details: TransactionDetails) => void;
   setOrderDetails: (details: OrderDetails) => void;
@@ -65,7 +108,9 @@ interface MfJourneyState {
   resetJourney: () => void;
 }
 
-export const useMfJourneyStore = create<MfJourneyState>((set) => ({
+export const useMfJourneyStore = create<MfJourneyState>()(
+  persist(
+    (set) => ({
   investorDetails: defaultInvestorDetails,
   transactionDetails: defaultTransactionDetails,
   searchStatus: 'IDLE',
@@ -75,6 +120,7 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
   fulfillments: [],
   schemes: [],
   realtimeEvents: [],
+  formCompleted: false,
   currentStep: 0,
   setInvestorDetails: (details) => set({ investorDetails: details }),
   startSearchState: () =>
@@ -84,12 +130,31 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
       searchStartedAt: new Date().toISOString(),
       searchError: undefined,
       searchTransactionId: undefined,
+      originalSelectTransactionId: undefined,
+      investmentTransactionId: undefined,
+      secondSelectTransactionId: undefined,
       providers: [],
       categories: [],
       fulfillments: [],
       schemes: [],
       rawCatalog: undefined,
       realtimeEvents: [],
+      selectedScheme: undefined,
+      selectedSchemePayload: undefined,
+      selectedQuote: undefined,
+      onSelectPayload: undefined,
+      finalOnSelectPayload: undefined,
+      initPayload: undefined,
+      onInitPayload: undefined,
+      confirmPayload: undefined,
+      onConfirmPayload: undefined,
+      statusPayload: undefined,
+      onStatusPayload: undefined,
+      investorFormResponse: undefined,
+      formCompleted: false,
+      formSubmissionId: undefined,
+      workbenchSession: undefined,
+      secondSelectPayload: undefined,
     }),
   setSearchAcknowledged: (transactionId) =>
     set({
@@ -116,6 +181,46 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
     set((state) => ({
       realtimeEvents: [event, ...state.realtimeEvents].slice(0, 50),
     })),
+  setOriginalSelectTransactionId: (transactionId) => set({ originalSelectTransactionId: transactionId }),
+  setInvestmentTransactionId: (transactionId) =>
+    set({
+      investmentTransactionId: transactionId,
+      secondSelectTransactionId: undefined,
+      onSelectPayload: undefined,
+      finalOnSelectPayload: undefined,
+      initPayload: undefined,
+      onInitPayload: undefined,
+      confirmPayload: undefined,
+      onConfirmPayload: undefined,
+      statusPayload: undefined,
+      onStatusPayload: undefined,
+      investorFormResponse: undefined,
+      formCompleted: false,
+      formSubmissionId: undefined,
+      workbenchSession: undefined,
+      secondSelectPayload: undefined,
+      orderDetails: undefined,
+    }),
+  setSecondSelectTransactionId: (transactionId) => set({ secondSelectTransactionId: transactionId }),
+  setOnSelectPayload: (payload, final = false) =>
+    set(final ? { finalOnSelectPayload: payload } : { onSelectPayload: payload, finalOnSelectPayload: undefined }),
+  setInitPayload: (payload) => set({ initPayload: payload }),
+  setOnInitPayload: (payload) => set({ onInitPayload: payload }),
+  setConfirmPayload: (payload) => set({ confirmPayload: payload }),
+  setOnConfirmPayload: (payload) => set({ onConfirmPayload: payload }),
+  setStatusPayload: (payload) => set({ statusPayload: payload }),
+  setOnStatusPayload: (payload) => set({ onStatusPayload: payload }),
+  setInvestorFormResponse: (response) => {
+    const submissionId = response.submission_id;
+    set({
+      investorFormResponse: response,
+      formCompleted: response.success === true && Boolean(submissionId),
+      formSubmissionId: submissionId,
+    });
+  },
+  setFormSubmissionId: (submissionId) => set({ formSubmissionId: submissionId }),
+  setWorkbenchSession: (session) => set({ workbenchSession: session }),
+  setSecondSelectPayload: (payload) => set({ secondSelectPayload: payload }),
   setSelectedScheme: (scheme, selection, quote) =>
     set({ selectedScheme: scheme, selectedSchemePayload: selection, selectedQuote: quote }),
   setTransactionDetails: (details) => set({ transactionDetails: details }),
@@ -126,6 +231,22 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
       selectedScheme: undefined,
       selectedSchemePayload: undefined,
       selectedQuote: undefined,
+      originalSelectTransactionId: undefined,
+      investmentTransactionId: undefined,
+      secondSelectTransactionId: undefined,
+      onSelectPayload: undefined,
+      finalOnSelectPayload: undefined,
+      initPayload: undefined,
+      onInitPayload: undefined,
+      confirmPayload: undefined,
+      onConfirmPayload: undefined,
+      statusPayload: undefined,
+      onStatusPayload: undefined,
+      investorFormResponse: undefined,
+      formCompleted: false,
+      formSubmissionId: undefined,
+      workbenchSession: undefined,
+      secondSelectPayload: undefined,
       transactionDetails: defaultTransactionDetails,
       orderDetails: undefined,
       currentStep: 1,
@@ -134,6 +255,9 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
     set({
       investorDetails: defaultInvestorDetails,
       searchTransactionId: undefined,
+      originalSelectTransactionId: undefined,
+      investmentTransactionId: undefined,
+      secondSelectTransactionId: undefined,
       searchStatus: 'IDLE',
       websocketStatus: 'DISCONNECTED',
       searchStartedAt: undefined,
@@ -147,8 +271,60 @@ export const useMfJourneyStore = create<MfJourneyState>((set) => ({
       selectedScheme: undefined,
       selectedSchemePayload: undefined,
       selectedQuote: undefined,
+      onSelectPayload: undefined,
+      finalOnSelectPayload: undefined,
+      initPayload: undefined,
+      onInitPayload: undefined,
+      confirmPayload: undefined,
+      onConfirmPayload: undefined,
+      statusPayload: undefined,
+      onStatusPayload: undefined,
+      investorFormResponse: undefined,
+      formCompleted: false,
+      formSubmissionId: undefined,
+      workbenchSession: undefined,
+      secondSelectPayload: undefined,
       transactionDetails: defaultTransactionDetails,
       orderDetails: undefined,
       currentStep: 0,
     }),
-}));
+    }),
+    {
+      name: 'ondc-mf-journey',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({
+        investorDetails: state.investorDetails,
+        searchTransactionId: state.searchTransactionId,
+        originalSelectTransactionId: state.originalSelectTransactionId,
+        investmentTransactionId: state.investmentTransactionId,
+        secondSelectTransactionId: state.secondSelectTransactionId,
+        searchStatus: state.searchStatus,
+        providers: state.providers,
+        categories: state.categories,
+        fulfillments: state.fulfillments,
+        schemes: state.schemes,
+        rawCatalog: state.rawCatalog,
+        realtimeEvents: state.realtimeEvents,
+        selectedScheme: state.selectedScheme,
+        selectedSchemePayload: state.selectedSchemePayload,
+        selectedQuote: state.selectedQuote,
+        onSelectPayload: state.onSelectPayload,
+        finalOnSelectPayload: state.finalOnSelectPayload,
+        initPayload: state.initPayload,
+        onInitPayload: state.onInitPayload,
+        confirmPayload: state.confirmPayload,
+        onConfirmPayload: state.onConfirmPayload,
+        statusPayload: state.statusPayload,
+        onStatusPayload: state.onStatusPayload,
+        investorFormResponse: state.investorFormResponse,
+        formCompleted: state.formCompleted,
+        formSubmissionId: state.formSubmissionId,
+        workbenchSession: state.workbenchSession,
+        secondSelectPayload: state.secondSelectPayload,
+        transactionDetails: state.transactionDetails,
+        orderDetails: state.orderDetails,
+        currentStep: state.currentStep,
+      }),
+    },
+  ),
+);

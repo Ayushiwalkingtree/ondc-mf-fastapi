@@ -87,10 +87,20 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=['*'] if settings.ENV == 'local' else [],
+        allow_origins=settings.cors_allow_origins,
+        allow_origin_regex=settings.CORS_ALLOW_ORIGIN_REGEX,
         allow_credentials=True,
-        allow_methods=['GET', 'POST', 'OPTIONS'],
-        allow_headers=['*'],
+        allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allow_headers=[
+            'Accept',
+            'Accept-Language',
+            'Authorization',
+            'Content-Language',
+            'Content-Type',
+            'X-Request-ID',
+            'X-Requested-With',
+        ],
+        expose_headers=['X-Request-ID'],
     )
     app.add_exception_handler(AppException, app_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)

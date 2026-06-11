@@ -1,68 +1,119 @@
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
-import { Button, Card, CardContent } from '@mui/material';
-import type { ParsedScheme, ThresholdValue } from '../../types/scheme';
+import { Button, Card, CardContent, Chip } from '@mui/material';
+import type { ReactNode } from 'react';
+import type { ParsedScheme } from '../../types/scheme';
 import styles from './SchemeCard.module.scss';
 
 interface SchemeCardProps {
   scheme: ParsedScheme;
+  onViewDetails: (scheme: ParsedScheme) => void;
   onSelect: (scheme: ParsedScheme) => void;
 }
 
-const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+const formatPlanPart = (value?: string): string =>
+  value
+    ? value
+        .split(/[\s_]+/)
+        .filter(Boolean)
+        .map((part) => (part.length <= 4 && part === part.toUpperCase() ? part : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()))
+        .join(' ')
+    : '';
 
-const findThreshold = (thresholds: ThresholdValue[], patterns: string[]): string | undefined => {
-  const normalizedPatterns = patterns.map(normalize);
-  return thresholds.find((threshold) => {
-    const haystack = normalize(`${threshold.source} ${threshold.label}`);
-    return normalizedPatterns.some((pattern) => haystack.includes(pattern));
-  })?.value;
-};
+const hasValue = (value?: string): value is string => Boolean(value && value.trim());
 
-const ValueRow = ({ label, value }: { label: string; value?: string }) => (
-  <div className={styles.valueRow}>
-    <span>{label}</span>
-    <strong>{value || '-'}</strong>
-  </div>
+const DetailItem = ({ label, value }: { label: string; value?: string }) =>
+  hasValue(value) ? (
+    <div className={styles.detailItem}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  ) : null;
+
+const SummaryBlock = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className={styles.summaryBlock}>
+    <h4>{title}</h4>
+    {children}
+  </section>
 );
 
-const SchemeCard = ({ scheme, onSelect }: SchemeCardProps) => {
-  const minimumAmount = findThreshold(scheme.thresholds, [
-    'amount_min',
-    'min_amount',
-    'minimum_amount',
-    'amount_minimum',
-  ]);
-  const maximumAmount = findThreshold(scheme.thresholds, [
-    'amount_max',
-    'max_amount',
-    'maximum_amount',
-    'amount_maximum',
-  ]);
+const formatInstallments = (minimum?: string, maximum?: string): string | undefined => {
+  if (hasValue(minimum) && hasValue(maximum)) {
+    return `${minimum} - ${maximum}`;
+  }
+
+  return minimum || maximum;
+};
+
+const SchemeCard = ({ scheme, onViewDetails, onSelect }: SchemeCardProps) => {
+  const planName = [formatPlanPart(scheme.plan), formatPlanPart(scheme.option)].filter(Boolean).join(' ');
+  const monthlySip = scheme.rules.sip.find((rule) =>
+    `${rule.type ?? ''} ${rule.frequency ?? ''} ${rule.frequencyDayType ?? ''}`.toLowerCase().includes('monthly'),
+  );
+  const firstSip = monthlySip ?? scheme.rules.sip[0];
+  const showLumpsum = Object.values(scheme.rules.lumpsum ?? {}).some(Boolean);
+  const showSip = Boolean(firstSip);
 
   return (
     <Card className={styles.card}>
       <CardContent className={styles.content}>
         <div className={styles.header}>
           <div>
-            <p className={styles.eyebrow}>{scheme.amcName || scheme.providerName}</p>
             <h3 className={styles.title}>{scheme.name}</h3>
-            <p className={styles.category}>{scheme.categoryPath || '-'}</p>
+            {planName ? <p className={styles.plan}>{planName}</p> : null}
           </div>
-          <Button variant="contained" endIcon={<NavigateNextIcon />} onClick={() => onSelect(scheme)}>
-            Select Scheme
-          </Button>
+          <div className={styles.actions}>
+            <Button variant="outlined" startIcon={<InfoOutlinedIcon />} onClick={() => onViewDetails(scheme)}>
+              View Details
+            </Button>
+            <Button variant="contained" endIcon={<NavigateNextIcon />} onClick={() => onSelect(scheme)}>
+              Select Scheme
+            </Button>
+          </div>
         </div>
 
-        <div className={styles.details}>
-          <ValueRow label="AMC Name" value={scheme.amcName || scheme.providerName} />
-          <ValueRow label="Category" value={scheme.categoryPath} />
-          <ValueRow label="Plan" value={scheme.plan} />
-          <ValueRow label="Option" value={scheme.option} />
-          <ValueRow label="ISIN" value={scheme.identifiers.isin} />
-          <ValueRow label="AMFI Identifier" value={scheme.identifiers.amfi} />
-          <ValueRow label="RTA Identifier" value={scheme.identifiers.rta} />
-          <ValueRow label="Minimum Amount" value={minimumAmount} />
-          <ValueRow label="Maximum Amount" value={maximumAmount} />
+        <div className={styles.detailGrid}>
+          <DetailItem label="AMC Name" value={scheme.amcName} />
+          <DetailItem label="Category" value={scheme.categoryPath} />
+          <DetailItem label="Plan" value={formatPlanPart(scheme.plan)} />
+          <DetailItem label="Option" value={formatPlanPart(scheme.option)} />
+          <DetailItem label="ISIN" value={scheme.identifiers.isin} />
+          <DetailItem label="Exit Load" value={scheme.exitLoad} />
+          <DetailItem label="Lock-in Period" value={scheme.lockInPeriod} />
+        </div>
+
+        <section className={styles.transactions}>
+          <h4>Transaction Types</h4>
+          <div className={styles.chips} aria-label="Supported transaction types">
+            {scheme.transactionChips.map((chip) => (
+              <Chip key={chip} label={chip} size="small" />
+            ))}
+          </div>
+        </section>
+
+        <div className={styles.summaryGrid}>
+          {showLumpsum ? (
+            <SummaryBlock title="Lumpsum Summary">
+              <div className={styles.summaryItems}>
+                <DetailItem label="Min Amount" value={scheme.rules.lumpsum?.minimumAmount} />
+                <DetailItem label="Max Amount" value={scheme.rules.lumpsum?.maximumAmount} />
+              </div>
+            </SummaryBlock>
+          ) : null}
+
+          {showSip ? (
+            <SummaryBlock title="SIP Summary">
+              <div className={styles.summaryItems}>
+                <DetailItem label="Frequency" value={firstSip?.frequency} />
+                <DetailItem label="Min Amount" value={firstSip?.minAmount} />
+                <DetailItem label="Max Amount" value={firstSip?.maxAmount} />
+                <DetailItem
+                  label="Installments"
+                  value={formatInstallments(firstSip?.installmentMin, firstSip?.installmentMax)}
+                />
+              </div>
+            </SummaryBlock>
+          ) : null}
         </div>
       </CardContent>
     </Card>

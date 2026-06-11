@@ -10,30 +10,30 @@ const localApiBaseUrl = (): string => {
 
 const localWebSocketBaseUrl = (): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.hostname}:8000`;
+  return `${protocol}//${window.location.host}`;
 };
 
 export const getApiBaseUrl = (): string => {
+  if (isLocalHost(window.location.hostname)) {
+    return trimTrailingSlash(window.location.origin);
+  }
+
   const configured = import.meta.env.VITE_API_BASE_URL as string | undefined;
   if (configured) {
     return trimTrailingSlash(configured);
-  }
-
-  if (isLocalHost(window.location.hostname)) {
-    return localApiBaseUrl();
   }
 
   return trimTrailingSlash(window.location.origin);
 };
 
 export const getWebSocketBaseUrl = (): string => {
+  if (isLocalHost(window.location.hostname)) {
+    return localWebSocketBaseUrl();
+  }
+
   const configured = import.meta.env.VITE_WS_BASE_URL as string | undefined;
   if (configured) {
     return trimTrailingSlash(configured);
-  }
-
-  if (isLocalHost(window.location.hostname)) {
-    return localWebSocketBaseUrl();
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

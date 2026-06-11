@@ -26,16 +26,19 @@ export interface OrderDetails {
   transactionId: string;
   messageId: string;
   status: OrderStatus;
+  providerId?: string;
   paymentReference?: string;
   submittedAt?: string;
 }
 
 export interface InitOrderPayload {
   investorDetails: InvestorDetails;
+  investmentTransactionId?: string;
   searchTransactionId?: string;
   selectedScheme: ParsedScheme;
   selectedSchemePayload?: SelectedSchemePayload;
   transactionDetails: TransactionDetails;
+  formSubmissionId?: string;
 }
 
 export type SearchStatus =

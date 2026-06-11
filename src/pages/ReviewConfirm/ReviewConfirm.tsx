@@ -4,7 +4,6 @@ import { Button, Card, CardContent, TextField } from '@mui/material';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { confirmOrder } from '../../services/confirm.service';
-import { initOrder } from '../../services/init.service';
 import { useMfJourneyStore } from '../../store/mfJourneyStore';
 import { formatInr } from '../../utils/formatters';
 import styles from '../page.module.scss';
@@ -26,17 +25,14 @@ const ReviewConfirm = () => {
       return;
     }
 
+    if (!orderDetails) {
+      setCurrentStep(2);
+      navigate('/transaction-setup');
+      return;
+    }
+
     setIsConfirming(true);
-    const draftOrder =
-      orderDetails ??
-      (
-        await initOrder({
-          investorDetails,
-          selectedScheme,
-          transactionDetails,
-        })
-      ).data;
-    const response = await confirmOrder(draftOrder);
+    const response = await confirmOrder(orderDetails);
     setOrderDetails(response.data);
     setCurrentStep(4);
     setIsConfirming(false);

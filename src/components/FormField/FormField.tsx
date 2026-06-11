@@ -46,6 +46,7 @@ const FormField = <T extends FieldValues>({
         multiline={multiline}
         rows={rows}
         disabled={disabled}
+        required={required}
         error={Boolean(fieldState.error)}
         helperText={fieldState.error?.message ?? helperText}
         inputProps={inputProps}

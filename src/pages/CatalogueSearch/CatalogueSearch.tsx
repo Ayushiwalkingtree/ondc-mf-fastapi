@@ -1,6 +1,23 @@
+import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
-import { Alert, Button, Card, CardContent, CircularProgress } from '@mui/material';
-import { useEffect } from 'react';
+import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Drawer,
+  IconButton,
+  Link,
+  Snackbar,
+} from '@mui/material';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import DeveloperPanel from '../../components/DeveloperPanel/DeveloperPanel';
@@ -10,6 +27,7 @@ import SchemeCard from '../../components/SchemeCard/SchemeCard';
 import { handleOndcRealtimeEvent } from '../../services/ondcEventHandler';
 import { ondcSocketService } from '../../services/ondcSocket.service';
 import { searchSchemes } from '../../services/search.service';
+import { selectScheme } from '../../services/select.service';
 import { useMfJourneyStore } from '../../store/mfJourneyStore';
 import type { OndcRealtimeEvent } from '../../types/ondc';
 import type { ParsedScheme, SchemeSearchParams } from '../../types/scheme';
@@ -20,6 +38,8 @@ import styles from './CatalogueSearch.module.scss';
 interface SearchFormValues {
   category: string;
 }
+
+type InvestmentType = 'LUMPSUM' | 'SIP';
 
 const categoryOptions: FieldOption[] = [
   { label: 'All Categories', value: '' },
@@ -40,23 +60,213 @@ const defaultSearchValues: SearchFormValues = {
   category: '',
 };
 
+const supportsFulfillmentType = (scheme: ParsedScheme, type: InvestmentType): boolean =>
+  scheme.fulfillmentDetails.some((fulfillment) =>
+    `${fulfillment.type ?? ''} ${fulfillment.label}`.toUpperCase().includes(type),
+  );
+
+const defaultFulfillmentType = (scheme: ParsedScheme): InvestmentType =>
+  supportsFulfillmentType(scheme, 'LUMPSUM') ? 'LUMPSUM' : 'SIP';
+
+const fulfillmentIdForType = (scheme: ParsedScheme, type: InvestmentType): string | undefined =>
+  scheme.fulfillmentDetails.find((fulfillment) =>
+    `${fulfillment.type ?? ''} ${fulfillment.label}`.toUpperCase().includes(type),
+  )?.id ?? scheme.fulfillmentIds[0];
+
+const createTransactionId = (): string =>
+  window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const waitForOnSelect = (transactionId: string): { cancel: () => void; promise: Promise<OndcRealtimeEvent> } => {
+  let unsubscribe: () => void = () => undefined;
+  let timeout: number | undefined;
+  const promise = new Promise<OndcRealtimeEvent>((resolve, reject) => {
+    timeout = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error('Timed out waiting for ONDC /on_select callback.'));
+    }, 60000);
+    unsubscribe = ondcSocketService.subscribe((event: OndcRealtimeEvent) => {
+      if (event.event === 'ON_SELECT_RECEIVED' && event.transaction_id === transactionId) {
+        if (timeout) {
+          window.clearTimeout(timeout);
+        }
+        unsubscribe();
+        resolve(event);
+      }
+    });
+  });
+
+  return {
+    cancel: () => {
+      if (timeout) {
+        window.clearTimeout(timeout);
+      }
+      unsubscribe();
+    },
+    promise,
+  };
+};
+
+const hasValue = (value?: string): value is string => Boolean(value && value.trim());
+
+const formatText = (value?: string): string | undefined => {
+  if (!hasValue(value)) {
+    return undefined;
+  }
+
+  return value
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((part) =>
+      part.length <= 4 && part === part.toUpperCase() ? part : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase(),
+    )
+    .join(' ');
+};
+
+const DetailField = ({ label, value }: { label: string; value?: string }) =>
+  hasValue(value) ? (
+    <div className={styles.detailField}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  ) : null;
+
+const DetailSection = ({ children, title }: { children: ReactNode; title: string }) => {
+  const content = Array.isArray(children) ? children.filter(Boolean) : children;
+  if (Array.isArray(content) && !content.length) {
+    return null;
+  }
+
+  return (
+    <section className={styles.detailSection}>
+      <h3>{title}</h3>
+      <div className={styles.detailGrid}>{content}</div>
+    </section>
+  );
+};
+
+const DetailsDrawer = ({
+  onClose,
+  onSelect,
+  scheme,
+}: {
+  onClose: () => void;
+  onSelect: (scheme: ParsedScheme) => void;
+  scheme?: ParsedScheme;
+}) => (
+  <Drawer anchor="right" open={Boolean(scheme)} onClose={onClose} PaperProps={{ className: styles.drawerPaper }}>
+    {scheme ? (
+      <div className={styles.drawer}>
+        <div className={styles.drawerHeader}>
+          <div>
+            {scheme.amcName ? <p>{scheme.amcName}</p> : null}
+            <h2>{scheme.name}</h2>
+          </div>
+          <IconButton aria-label="Close details" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </div>
+
+        <div className={styles.drawerActions}>
+          <Button variant="contained" onClick={() => onSelect(scheme)}>
+            Select Scheme
+          </Button>
+        </div>
+
+        <Divider />
+
+        <DetailSection title="Scheme Information">
+          <DetailField label="Status" value={scheme.status} />
+          <DetailField label="Lock-in Period" value={scheme.lockInPeriod} />
+          <DetailField label="Entry Load" value={scheme.entryLoad} />
+          <DetailField label="Exit Load" value={scheme.exitLoad} />
+          {scheme.nfo.startDate ? (
+            <>
+              <DetailField label="NFO Start" value={scheme.nfo.startDate} />
+              <DetailField label="NFO End" value={scheme.nfo.endDate} />
+              <DetailField label="NFO Allotment" value={scheme.nfo.allotmentDate} />
+              <DetailField label="NFO Reopen" value={scheme.nfo.reopenDate} />
+            </>
+          ) : null}
+          {scheme.documents.offerDocumentUrl ? (
+            <div className={styles.detailField}>
+              <span>Offer Document URL</span>
+              <Link href={scheme.documents.offerDocumentUrl} target="_blank" rel="noreferrer">
+                {scheme.documents.offerDocumentUrl}
+              </Link>
+            </div>
+          ) : null}
+        </DetailSection>
+
+        <DetailSection title="Plan Identifiers">
+          <DetailField label="ISIN" value={scheme.identifiers.isin} />
+          <DetailField label="RTA Identifier" value={scheme.identifiers.rta} />
+          <DetailField label="AMFI Identifier" value={scheme.identifiers.amfi} />
+        </DetailSection>
+
+        <DetailSection title="Plan Options">
+          <DetailField label="Plan" value={formatText(scheme.plan)} />
+          <DetailField label="Option" value={formatText(scheme.option)} />
+          <DetailField label="IDCW Option" value={formatText(scheme.idcwOption)} />
+        </DetailSection>
+
+        <section className={styles.fulfillmentSection}>
+          <h3>Fulfillments</h3>
+          <div className={styles.fulfillmentList}>
+            {scheme.fulfillmentDetails.map((fulfillment) => (
+              <article className={styles.fulfillmentCard} key={fulfillment.id || fulfillment.label}>
+                <div className={styles.fulfillmentHeader}>
+                  <div>
+                    <h4>{fulfillment.label}</h4>
+                    {fulfillment.type ? <p>{fulfillment.type}</p> : null}
+                  </div>
+                  {fulfillment.frequency ? <Chip label={fulfillment.frequency} size="small" /> : null}
+                </div>
+                {fulfillment.thresholds.length ? (
+                  <div className={styles.thresholdGrid}>
+                    {fulfillment.thresholds.map((threshold, index) => (
+                      <DetailField
+                        key={`${threshold.source}-${threshold.label}-${index}`}
+                        label={threshold.label}
+                        value={threshold.value}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    ) : null}
+  </Drawer>
+);
+
 const CatalogueSearch = () => {
   const navigate = useNavigate();
+  const [detailsScheme, setDetailsScheme] = useState<ParsedScheme | undefined>();
+  const [confirmationScheme, setConfirmationScheme] = useState<ParsedScheme | undefined>();
+  const [isSelectingScheme, setIsSelectingScheme] = useState(false);
+  const [selectError, setSelectError] = useState<string | undefined>();
   const {
     categories,
     fulfillments,
+    investorDetails,
     providers,
     realtimeEvents,
     schemes,
     searchError,
     searchStatus,
     searchTransactionId,
+    transactionDetails,
     recordRealtimeEvent,
     setCurrentStep,
     setSearchAcknowledged,
     setSearchCatalog,
     setSearchError,
     setSearchWaiting,
+    setInvestmentTransactionId,
+    setOnSelectPayload,
+    setOriginalSelectTransactionId,
     setSelectedScheme,
     setWebsocketStatus,
     startSearchState,
@@ -106,11 +316,57 @@ const CatalogueSearch = () => {
     }
   };
 
-  const selectScheme = (scheme: ParsedScheme) => {
-    setSelectedScheme(scheme, mapSchemeToSelection(scheme));
-    setCurrentStep(2);
-    navigate('/transaction-setup');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const requestSchemeSelection = (scheme: ParsedScheme) => {
+    setConfirmationScheme(scheme);
+  };
+
+  const confirmSchemeSelection = async () => {
+    if (!confirmationScheme) {
+      return;
+    }
+
+    const scheme = confirmationScheme;
+    const investmentTransactionId = createTransactionId();
+    const fulfillmentType = defaultFulfillmentType(scheme);
+    let onSelectReceived: ReturnType<typeof waitForOnSelect> | undefined;
+
+    try {
+      setSelectError(undefined);
+      setIsSelectingScheme(true);
+      console.log('First Select Transaction', investmentTransactionId);
+      setOriginalSelectTransactionId(investmentTransactionId);
+      setInvestmentTransactionId(investmentTransactionId);
+      ondcSocketService.connect(investmentTransactionId);
+      onSelectReceived = waitForOnSelect(investmentTransactionId);
+      const response = await selectScheme(scheme, investmentTransactionId, {
+        amount: transactionDetails.amount,
+        arn: 'ARN-000000',
+        customerPan: investorDetails.pan,
+        euin: '',
+        fulfillmentId: fulfillmentIdForType(scheme, fulfillmentType),
+        fulfillmentType,
+        subBrokerArn: '',
+      });
+      setSelectedScheme(scheme, mapSchemeToSelection(scheme), response.data);
+      setCurrentStep(2);
+      setConfirmationScheme(undefined);
+      setDetailsScheme(undefined);
+      navigate(`/transaction-setup?transaction_id=${encodeURIComponent(investmentTransactionId)}`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      onSelectReceived.promise
+        .then((onSelectEvent) => {
+          setOnSelectPayload(onSelectEvent.payload);
+        })
+        .catch((error) => {
+          setSelectError(error instanceof Error ? error.message : 'Timed out waiting for ONDC /on_select callback.');
+        });
+      onSelectReceived = undefined;
+    } catch (error) {
+      onSelectReceived?.cancel();
+      setSelectError(error instanceof Error ? error.message : 'Unable to send ONDC /select.');
+    } finally {
+      setIsSelectingScheme(false);
+    }
   };
 
   const isLoading =
@@ -163,13 +419,39 @@ const CatalogueSearch = () => {
 
       <div className={styles.schemes}>
         {schemes.map((scheme) => (
-          <SchemeCard key={scheme.id} scheme={scheme} onSelect={selectScheme} />
+          <SchemeCard key={scheme.id} scheme={scheme} onSelect={requestSchemeSelection} onViewDetails={setDetailsScheme} />
         ))}
 
         {searchStatus === 'CATALOG_RECEIVED' && schemes.length === 0 ? (
           <Alert severity="warning">ONDC catalogue received, but no items were present in the payload.</Alert>
         ) : null}
       </div>
+
+      <DetailsDrawer scheme={detailsScheme} onClose={() => setDetailsScheme(undefined)} onSelect={requestSchemeSelection} />
+
+      <Dialog open={Boolean(confirmationScheme)} onClose={() => setConfirmationScheme(undefined)} fullWidth maxWidth="xs">
+        <DialogTitle>Confirm Scheme</DialogTitle>
+        <DialogContent>
+          <div>
+            <strong>{confirmationScheme?.name}</strong>
+            {confirmationScheme?.amcName ? <span>{confirmationScheme.amcName}</span> : null}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" onClick={() => setConfirmationScheme(undefined)} disabled={isSelectingScheme}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={confirmSchemeSelection} disabled={isSelectingScheme}>
+            {isSelectingScheme ? 'Selecting...' : 'Continue'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={Boolean(selectError)} autoHideDuration={6000} onClose={() => setSelectError(undefined)}>
+        <Alert severity="error" onClose={() => setSelectError(undefined)}>
+          {selectError}
+        </Alert>
+      </Snackbar>
     </div>
   );
 };
