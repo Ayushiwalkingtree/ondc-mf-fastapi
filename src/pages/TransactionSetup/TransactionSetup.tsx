@@ -13,6 +13,8 @@ import {
   DialogContent,
   DialogTitle,
   Link,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,9 +33,11 @@ import type { ParsedScheme, RedemptionRules } from '../../types/scheme';
 import type { TransactionDetails } from '../../types/transaction';
 import { amountToWords } from '../../utils/formatters';
 import styles from '../page.module.scss';
+import InvestorDetailsReactForm from './InvestorDetailsReactForm';
 import detailStyles from './TransactionSetup.module.scss';
 
 type InvestmentType = 'LUMPSUM' | 'SIP';
+type InvestorFormMode = 'native' | 'iframe';
 type WizardStepId =
   | 'search'
   | 'select'
@@ -806,6 +810,7 @@ const TransactionSetup = () => {
   const realtimeEvents = useMfJourneyStore((state) => state.realtimeEvents);
   const recordRealtimeEvent = useMfJourneyStore((state) => state.recordRealtimeEvent);
   const setInvestorFormResponse = useMfJourneyStore((state) => state.setInvestorFormResponse);
+  const setInvestorFormMeta = useMfJourneyStore((state) => state.setInvestorFormMeta);
   const setOriginalSelectTransactionId = useMfJourneyStore((state) => state.setOriginalSelectTransactionId);
   const setSecondSelectTransactionId = useMfJourneyStore((state) => state.setSecondSelectTransactionId);
   const setOnSelectPayload = useMfJourneyStore((state) => state.setOnSelectPayload);
@@ -834,6 +839,8 @@ const TransactionSetup = () => {
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [activeStep, setActiveStep] = useState<WizardStepId>('search');
   const [developerMode, setDeveloperMode] = useState(false);
+  const [investorFormMode, setInvestorFormMode] = useState<InvestorFormMode>('native');
+  const [nativeFormFallbackReason, setNativeFormFallbackReason] = useState<string | undefined>();
   const [onUpdateEvents, setOnUpdateEvents] = useState<OndcRealtimeEvent[]>([]);
   const investorFormIframeRef = useRef<HTMLIFrameElement | null>(null);
   const routeTransactionId = new URLSearchParams(window.location.search).get('transaction_id') ?? undefined;
@@ -1004,6 +1011,21 @@ const TransactionSetup = () => {
     }
   }, [onSelectPayload, setOriginalSelectTransactionId, setWorkbenchSession]);
 
+  useEffect(() => {
+    if (form.url || form.id) {
+      setInvestorFormMeta({
+        formId: form.id,
+        formUrl: form.url,
+      });
+    }
+  }, [form.id, form.url, setInvestorFormMeta]);
+
+  useEffect(() => {
+    setInvestorFormMode('native');
+    setNativeFormFallbackReason(undefined);
+    setIsIframeLoading(true);
+  }, [form.url]);
+
   const completeInvestorForm = useCallback((response: InvestorFormResponse) => {
     if (response.success === true && response.submission_id) {
       console.log('Investor form completed', response);
@@ -1047,6 +1069,12 @@ const TransactionSetup = () => {
       window.setTimeout(() => readIframeFormResponse(iframe), delay);
     });
   }, [readIframeFormResponse]);
+
+  const fallbackToIframeForm = useCallback((reason: string) => {
+    setNativeFormFallbackReason(reason);
+    setInvestorFormMode('iframe');
+    setIsIframeLoading(true);
+  }, []);
 
   useEffect(() => {
     if (form.url) {
@@ -1468,33 +1496,38 @@ const TransactionSetup = () => {
       case 'investorForm':
         return (
           <>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const typedSubmissionId = getValues('submissionId')?.trim();
-                if (!typedSubmissionId) {
-                  setSubmitError('Submission ID is required.');
-                  return;
-                }
-                setInvestorFormResponse({ success: true, submission_id: typedSubmissionId });
-                setSubmitError(undefined);
-                setActiveStep('secondSelect');
-              }}
-            >
-              <DetailSection title="Submission ID">
-                <div className={styles.grid}>
-                  <FormField control={control} name="submissionId" label="Submission ID" required />
-                </div>
-                <div className={styles.actions}>
-                  <Button type="submit" variant="contained" endIcon={<NavigateNextIcon />}>
-                    Continue to Second Select
-                  </Button>
-                </div>
-              </DetailSection>
-            </form>
-            <DetailSection title="Investor Form">
+            <DetailSection title="Investor Details">
+              <ToggleButtonGroup
+                exclusive
+                onChange={(_, value: InvestorFormMode | null) => {
+                  if (value) {
+                    setInvestorFormMode(value);
+                    setNativeFormFallbackReason(undefined);
+                    setIsIframeLoading(value === 'iframe');
+                  }
+                }}
+                size="small"
+                value={investorFormMode}
+              >
+                <ToggleButton value="native">Use Native Form</ToggleButton>
+                <ToggleButton value="iframe">Use Iframe</ToggleButton>
+              </ToggleButtonGroup>
+
+              {nativeFormFallbackReason ? (
+                <Alert severity="warning">Native form unavailable. Falling back to iframe: {nativeFormFallbackReason}</Alert>
+              ) : null}
+
               {shouldShowForm ? (
-                <>
+                investorFormMode === 'native' && form.url ? (
+                  <InvestorDetailsReactForm
+                    developerMode={developerMode}
+                    formUrl={form.url}
+                    onFallback={fallbackToIframeForm}
+                    onSubmitted={completeInvestorForm}
+                    submissionId={submissionId ?? formSubmissionId}
+                  />
+                ) : (
+                  <>
                   {isIframeLoading ? <p className={detailStyles.emptyState}>Loading form...</p> : null}
                   <iframe
                     ref={investorFormIframeRef}
@@ -1507,7 +1540,8 @@ const TransactionSetup = () => {
                     }}
                   />
                   {isSubmittingForm ? <p className={detailStyles.emptyState}>Submitting form response...</p> : null}
-                </>
+                  </>
+                )
               ) : (
                 renderEmptyState(formCompleted ? 'Investor form submitted.' : 'Investor form URL is not available yet.')
               )}
@@ -1516,6 +1550,16 @@ const TransactionSetup = () => {
               <div className={detailStyles.detailGrid}>
                 <DetailRow label="Submission ID" value={submissionId ?? formSubmissionId} />
                 <DetailRow label="Status" value={formCompleted ? 'Success' : 'Pending'} />
+              </div>
+              <div className={styles.actions}>
+                <Button
+                  disabled={!formCompleted}
+                  endIcon={<NavigateNextIcon />}
+                  onClick={() => setActiveStep('secondSelect')}
+                  variant="contained"
+                >
+                  Continue To Second Select
+                </Button>
               </div>
             </DetailSection>
           </>

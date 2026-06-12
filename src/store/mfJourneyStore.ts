@@ -19,6 +19,11 @@ export interface WorkbenchSession {
   transactionId?: string;
 }
 
+export interface InvestorFormMeta {
+  formId?: string;
+  formUrl?: string;
+}
+
 const defaultInvestorDetails: InvestorDetails = {
   investorName: 'Aarav Sharma',
   mobileNumber: '9876543210',
@@ -71,6 +76,7 @@ interface MfJourneyState {
   statusPayload?: unknown;
   onStatusPayload?: unknown;
   investorFormResponse?: InvestorFormResponse;
+  investorFormMeta?: InvestorFormMeta;
   formCompleted: boolean;
   formSubmissionId?: string;
   workbenchSession?: WorkbenchSession;
@@ -97,6 +103,7 @@ interface MfJourneyState {
   setStatusPayload: (payload: unknown) => void;
   setOnStatusPayload: (payload: unknown) => void;
   setInvestorFormResponse: (response: InvestorFormResponse) => void;
+  setInvestorFormMeta: (meta: InvestorFormMeta) => void;
   setFormSubmissionId: (submissionId: string) => void;
   setWorkbenchSession: (session: WorkbenchSession) => void;
   setSecondSelectPayload: (payload: unknown) => void;
@@ -151,6 +158,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       statusPayload: undefined,
       onStatusPayload: undefined,
       investorFormResponse: undefined,
+      investorFormMeta: undefined,
       formCompleted: false,
       formSubmissionId: undefined,
       workbenchSession: undefined,
@@ -195,6 +203,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       statusPayload: undefined,
       onStatusPayload: undefined,
       investorFormResponse: undefined,
+      investorFormMeta: undefined,
       formCompleted: false,
       formSubmissionId: undefined,
       workbenchSession: undefined,
@@ -218,6 +227,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       formSubmissionId: submissionId,
     });
   },
+  setInvestorFormMeta: (meta) => set({ investorFormMeta: meta }),
   setFormSubmissionId: (submissionId) => set({ formSubmissionId: submissionId }),
   setWorkbenchSession: (session) => set({ workbenchSession: session }),
   setSecondSelectPayload: (payload) => set({ secondSelectPayload: payload }),
@@ -243,6 +253,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       statusPayload: undefined,
       onStatusPayload: undefined,
       investorFormResponse: undefined,
+      investorFormMeta: undefined,
       formCompleted: false,
       formSubmissionId: undefined,
       workbenchSession: undefined,
@@ -280,6 +291,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       statusPayload: undefined,
       onStatusPayload: undefined,
       investorFormResponse: undefined,
+      investorFormMeta: undefined,
       formCompleted: false,
       formSubmissionId: undefined,
       workbenchSession: undefined,
@@ -317,6 +329,7 @@ export const useMfJourneyStore = create<MfJourneyState>()(
         statusPayload: state.statusPayload,
         onStatusPayload: state.onStatusPayload,
         investorFormResponse: state.investorFormResponse,
+        investorFormMeta: state.investorFormMeta,
         formCompleted: state.formCompleted,
         formSubmissionId: state.formSubmissionId,
         workbenchSession: state.workbenchSession,
