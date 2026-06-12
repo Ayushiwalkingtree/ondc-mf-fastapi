@@ -17,7 +17,7 @@ import {
   Link,
   Snackbar,
 } from '@mui/material';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import DeveloperPanel from '../../components/DeveloperPanel/DeveloperPanel';
@@ -26,11 +26,12 @@ import type { FieldOption } from '../../components/FormField/FormField';
 import SchemeCard from '../../components/SchemeCard/SchemeCard';
 import { handleOndcRealtimeEvent } from '../../services/ondcEventHandler';
 import { ondcSocketService } from '../../services/ondcSocket.service';
-import { searchSchemes } from '../../services/search.service';
+import { getSearchStatus, searchSchemes } from '../../services/search.service';
 import { selectScheme } from '../../services/select.service';
 import { useMfJourneyStore } from '../../store/mfJourneyStore';
 import type { OndcRealtimeEvent } from '../../types/ondc';
-import type { ParsedScheme, SchemeSearchParams } from '../../types/scheme';
+import type { OndcOnSearchPayload, ParsedScheme, SchemeSearchParams } from '../../types/scheme';
+import { parseOnSearchCatalog } from '../../utils/catalogParser';
 import { mapSchemeToSelection } from '../../utils/schemeMapper';
 import pageStyles from '../page.module.scss';
 import styles from './CatalogueSearch.module.scss';
@@ -59,6 +60,9 @@ const categoryOptions: FieldOption[] = [
 const defaultSearchValues: SearchFormValues = {
   category: '',
 };
+
+const SEARCH_POLL_INTERVAL_MS = 3000;
+const SEARCH_TIMEOUT_MS = 60000;
 
 const supportsFulfillmentType = (scheme: ParsedScheme, type: InvestmentType): boolean =>
   scheme.fulfillmentDetails.some((fulfillment) =>
@@ -243,6 +247,8 @@ const DetailsDrawer = ({
 
 const CatalogueSearch = () => {
   const navigate = useNavigate();
+  const searchPollTimeoutRef = useRef<number | undefined>();
+  const searchPollTokenRef = useRef(0);
   const [detailsScheme, setDetailsScheme] = useState<ParsedScheme | undefined>();
   const [confirmationScheme, setConfirmationScheme] = useState<ParsedScheme | undefined>();
   const [isSelectingScheme, setIsSelectingScheme] = useState(false);
@@ -258,6 +264,7 @@ const CatalogueSearch = () => {
     searchStatus,
     searchTransactionId,
     transactionDetails,
+    workbenchSession,
     recordRealtimeEvent,
     setCurrentStep,
     setSearchAcknowledged,
@@ -268,6 +275,7 @@ const CatalogueSearch = () => {
     setOnSelectPayload,
     setOriginalSelectTransactionId,
     setSelectedScheme,
+    setWorkbenchSession,
     setWebsocketStatus,
     startSearchState,
     websocketStatus,
@@ -294,14 +302,82 @@ const CatalogueSearch = () => {
     };
   }, [recordRealtimeEvent, setSearchCatalog, setSearchError, setWebsocketStatus]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const session = {
+      sessionId: url.searchParams.get('session_id') ?? undefined,
+      flowId: url.searchParams.get('flow_id') ?? undefined,
+      transactionId: url.searchParams.get('transaction_id') ?? undefined,
+      subscriberUrl: url.searchParams.get('subscriber_url') ?? undefined,
+    };
+    if (session.sessionId || session.flowId || session.transactionId || session.subscriberUrl) {
+      setWorkbenchSession(session);
+    }
+  }, [setWorkbenchSession]);
+
+  useEffect(
+    () => () => {
+      if (searchPollTimeoutRef.current) {
+        window.clearTimeout(searchPollTimeoutRef.current);
+      }
+      searchPollTokenRef.current += 1;
+    },
+    [],
+  );
+
+  const stopSearchPolling = () => {
+    searchPollTokenRef.current += 1;
+    if (searchPollTimeoutRef.current) {
+      window.clearTimeout(searchPollTimeoutRef.current);
+      searchPollTimeoutRef.current = undefined;
+    }
+  };
+
+  const pollSearchStatus = (trackingId: string, startedAt: number, token: number) => {
+    searchPollTimeoutRef.current = window.setTimeout(async () => {
+      if (searchPollTokenRef.current !== token) {
+        return;
+      }
+      if (Date.now() - startedAt >= SEARCH_TIMEOUT_MS) {
+        setSearchError('Timed out waiting for ONDC catalogue response.');
+        return;
+      }
+
+      try {
+        const status = await getSearchStatus(trackingId);
+        if (searchPollTokenRef.current !== token) {
+          return;
+        }
+        if (status.status === 'completed') {
+          if (!status.catalogue) {
+            setSearchError('Search completed without a catalogue payload.');
+            return;
+          }
+          setSearchCatalog(parseOnSearchCatalog(status.catalogue as OndcOnSearchPayload));
+          return;
+        }
+        if (status.status === 'failed') {
+          setSearchError(status.error || 'ONDC search failed.');
+          return;
+        }
+        pollSearchStatus(trackingId, startedAt, token);
+      } catch (error) {
+        setSearchError(error instanceof Error ? error.message : 'Unable to read search status.');
+      }
+    }, SEARCH_POLL_INTERVAL_MS);
+  };
+
   const startSearch = async (values: SearchFormValues) => {
     try {
+      stopSearchPolling();
       ondcSocketService.disconnect();
       startSearchState();
       const payload: SchemeSearchParams = {
         intent: 'mutual funds',
         category: values.category,
         provider_id: '',
+        session_id: workbenchSession?.sessionId,
+        subscriber_url: workbenchSession?.subscriberUrl,
         raw_overrides: {},
       };
       const response = await searchSchemes(payload);
@@ -311,6 +387,11 @@ const CatalogueSearch = () => {
       setSearchAcknowledged(response.transaction_id);
       ondcSocketService.connect(response.transaction_id);
       window.setTimeout(setSearchWaiting, 650);
+      if (!response.tracking_id) {
+        throw new Error('Search tracking id was not returned by backend.');
+      }
+      const token = searchPollTokenRef.current;
+      pollSearchStatus(response.tracking_id, Date.now(), token);
     } catch (error) {
       setSearchError(error instanceof Error ? error.message : 'Unable to start ONDC search.');
     }

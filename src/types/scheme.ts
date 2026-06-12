@@ -190,5 +190,7 @@ export interface SchemeSearchParams {
   intent: string;
   provider_id?: string;
   category?: string;
+  session_id?: string;
+  subscriber_url?: string;
   raw_overrides?: Record<string, unknown>;
 }

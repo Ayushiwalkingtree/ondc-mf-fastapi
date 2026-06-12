@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     ONDC_LOOKUP_TYPE: str = 'BAP'
     ONDC_REGISTRY_SUBSCRIBER_TYPE: str = 'buyerApp'
     ONDC_REQUEST_TIMEOUT_SECONDS: int = 30
+    ONDC_WORKBENCH_EXPECTATION_URL: str = 'https://workbench.ondc.tech/backend-ui/sessions/expectation'
+    ONDC_WORKBENCH_SUBSCRIBER_URL: str | None = None
+    ONDC_SEARCH_RESTART_DELAY_SECONDS: float = 2.0
     ONDC_LOOKUP_CACHE_SECONDS: int = 900
     ONDC_SITE_VERIFICATION_FILE: str = 'ondc-site-verification.html'
     ONDC_VERIFY_CALLBACK_SIGNATURES: bool = True

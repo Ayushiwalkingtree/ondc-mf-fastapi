@@ -54,7 +54,15 @@ export type WebSocketStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'REC
 export interface SearchInitiatedResponse {
   success: boolean;
   transaction_id: string;
+  tracking_id?: string;
   status?: string;
+}
+
+export interface SearchStatusResponse {
+  status: 'initiated' | 'waiting_for_webhook' | 'completed' | 'failed';
+  catalogue?: unknown;
+  transaction_id?: string;
+  error?: string;
 }
 
 export interface OndcRealtimeEvent {

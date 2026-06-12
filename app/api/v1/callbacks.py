@@ -7,6 +7,7 @@ from app.db import get_db
 from app.schemas.ondc import OndcCallbackPayload
 from app.schemas.common import AckResponse
 from app.services.registry import RegistryClient
+from app.services.search_state import complete_search_by_transaction
 from app.services.transaction_log import save_ondc_log
 from app.services.websocket_manager import connection_manager
 from app.utils.ondc_auth import AuthHeader, parse_authorization_header, verify_authorization_header
@@ -55,6 +56,12 @@ async def _handle_callback(
         status='ACK',
         subscriber_id=auth.subscriber_id,
     )
+    if action == 'on_search':
+        await complete_search_by_transaction(
+            db,
+            transaction_id=raw.get('context', {}).get('transaction_id'),
+            catalogue=raw,
+        )
     await connection_manager.send_event(
         raw.get('context', {}).get('transaction_id'),
         {

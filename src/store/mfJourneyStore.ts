@@ -17,6 +17,7 @@ export interface WorkbenchSession {
   sessionId?: string;
   flowId?: string;
   transactionId?: string;
+  subscriberUrl?: string;
 }
 
 export interface InvestorFormMeta {
@@ -161,7 +162,6 @@ export const useMfJourneyStore = create<MfJourneyState>()(
       investorFormMeta: undefined,
       formCompleted: false,
       formSubmissionId: undefined,
-      workbenchSession: undefined,
       secondSelectPayload: undefined,
     }),
   setSearchAcknowledged: (transactionId) =>

@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.schemas.mf import (
     ConfirmRequest,
     StatusRequest,
     OutboundResponse,
+    SearchStatusResponse,
 )
 from app.services.mf_mapper import MutualFundMapper
 from app.services.ondc_client import OndcClient
@@ -22,6 +24,13 @@ from app.services.transaction_log import (
     find_discovered_select_details,
     find_transaction_message_sequence,
     save_ondc_log,
+)
+from app.services.search_state import (
+    create_search_state,
+    find_latest_active_search_session,
+    get_search_state,
+    mark_search_failed,
+    mark_search_waiting,
 )
 
 router = APIRouter(prefix='/mf', tags=['mutual-funds'], dependencies=[Depends(verify_internal_api_key)])
@@ -71,10 +80,114 @@ async def _send(action: str, url: str, payload: dict, db: AsyncSession | None) -
 
 @router.post('/search', response_model=SearchInitiatedResponse)
 async def search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) -> SearchInitiatedResponse:
+    return await _start_search(req, db, cleanup_expectation=True)
+
+
+@router.post('/restart-search', response_model=SearchInitiatedResponse)
+async def restart_search(req: SearchRequest, db: AsyncSession | None = Depends(get_db)) -> SearchInitiatedResponse:
+    return await _start_search(req, db, cleanup_expectation=True)
+
+
+@router.get('/search-status/{tracking_id}', response_model=SearchStatusResponse)
+async def search_status(tracking_id: str, db: AsyncSession | None = Depends(get_db)) -> SearchStatusResponse:
+    state = await get_search_state(db, tracking_id=tracking_id)
+    if not state:
+        raise AppException('Search tracking id not found.', status_code=404, code='SEARCH_TRACKING_NOT_FOUND')
+    return SearchStatusResponse(
+        status=state['status'],
+        catalogue=state.get('catalogue'),
+        transaction_id=state.get('transaction_id'),
+        error=state.get('error'),
+    )
+
+
+async def _start_search(
+    req: SearchRequest,
+    db: AsyncSession | None,
+    *,
+    cleanup_expectation: bool,
+) -> SearchInitiatedResponse:
     settings = get_settings()
+    if cleanup_expectation:
+        await _clear_active_search_expectation(req, db)
+
     payload = mapper.build_search(req)
-    response = await _send('search', settings.ONDC_GATEWAY_SEARCH_URL, payload, db)
-    return SearchInitiatedResponse(transaction_id=response.transaction_id)
+    context = payload['context']
+    tracking_id = await create_search_state(
+        db,
+        request_payload=req.model_dump(exclude_none=True),
+        transaction_id=context.get('transaction_id'),
+        message_id=context.get('message_id'),
+        session_id=req.session_id,
+        subscriber_url=_search_subscriber_url(req),
+    )
+    try:
+        response = await _send('search', settings.ONDC_GATEWAY_SEARCH_URL, payload, db)
+    except Exception as exc:
+        await mark_search_failed(
+            db,
+            tracking_id=tracking_id,
+            transaction_id=context.get('transaction_id'),
+            message_id=context.get('message_id'),
+            error=str(exc),
+        )
+        raise
+
+    ack_status = _ack_status(response.ack)
+    if ack_status == 'NACK':
+        await mark_search_failed(
+            db,
+            tracking_id=tracking_id,
+            transaction_id=response.transaction_id,
+            message_id=response.message_id,
+            error='ONDC search returned NACK.',
+        )
+    else:
+        await mark_search_waiting(
+            db,
+            tracking_id=tracking_id,
+            transaction_id=response.transaction_id,
+            message_id=response.message_id,
+        )
+    return SearchInitiatedResponse(transaction_id=response.transaction_id, tracking_id=tracking_id)
+
+
+async def _clear_active_search_expectation(
+    req: SearchRequest,
+    db: AsyncSession | None,
+) -> None:
+    settings = get_settings()
+    session_id = req.session_id
+    subscriber_url = _search_subscriber_url(req)
+    if not session_id:
+        stored_session_id, stored_subscriber_url = await find_latest_active_search_session(db)
+        session_id = stored_session_id
+        subscriber_url = subscriber_url or stored_subscriber_url
+    if not session_id:
+        log.info('workbench_expectation_delete_skipped', reason='missing_session_id')
+        return
+
+    subscriber_url = subscriber_url or settings.ONDC_CALLBACK_URL
+    try:
+        await client.delete_expectation(session_id=session_id, subscriber_url=subscriber_url)
+        await asyncio.sleep(settings.ONDC_SEARCH_RESTART_DELAY_SECONDS)
+    except Exception as exc:
+        log.error(
+            'workbench_expectation_delete_failed',
+            session_id=session_id,
+            subscriber_url=subscriber_url,
+            error=str(exc),
+        )
+        raise AppException(
+            'Unable to clear active ONDC Workbench expectation before restarting search.',
+            status_code=502,
+            code='WORKBENCH_EXPECTATION_DELETE_FAILED',
+        ) from exc
+
+
+def _search_subscriber_url(req: SearchRequest) -> str | None:
+    settings = get_settings()
+    return req.subscriber_url or settings.ONDC_WORKBENCH_SUBSCRIBER_URL or settings.ONDC_CALLBACK_URL
 
 
 @router.post('/select', response_model=OutboundResponse)

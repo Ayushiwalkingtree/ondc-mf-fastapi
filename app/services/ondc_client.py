@@ -55,3 +55,34 @@ class OndcClient:
             raise OndcClientError('ONDC request timed out', 504) from exc
         except httpx.HTTPError as exc:
             raise OndcClientError(f'ONDC HTTP error: {exc}', 502) from exc
+
+    async def delete_expectation(self, *, session_id: str, subscriber_url: str) -> dict[str, Any]:
+        params = {
+            'session_id': session_id,
+            'subscriber_url': subscriber_url,
+        }
+        log.info(
+            'workbench_expectation_delete',
+            url=self.settings.ONDC_WORKBENCH_EXPECTATION_URL,
+            session_id=session_id,
+            subscriber_url=subscriber_url,
+        )
+        async with httpx.AsyncClient(timeout=self.settings.ONDC_REQUEST_TIMEOUT_SECONDS) as client:
+            resp = await client.delete(self.settings.ONDC_WORKBENCH_EXPECTATION_URL, params=params)
+            body_text = resp.text
+            if resp.status_code == 404:
+                return {'status_code': resp.status_code, 'raw': body_text}
+            if resp.status_code >= 400:
+                log.warning(
+                    'workbench_expectation_delete_failed',
+                    status_code=resp.status_code,
+                    body=body_text[:1000],
+                )
+                raise OndcClientError(
+                    f'Workbench expectation delete returned HTTP {resp.status_code}: {body_text[:1000]}',
+                    502,
+                )
+            try:
+                return resp.json()
+            except ValueError:
+                return {'status_code': resp.status_code, 'raw': body_text}

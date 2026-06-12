@@ -9,6 +9,8 @@ class SearchRequest(BaseModel):
     city: str | None = None
     provider_id: str | None = None
     category: str | None = None
+    session_id: str | None = None
+    subscriber_url: str | None = None
     raw_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -204,4 +206,12 @@ class OutboundResponse(BaseModel):
 class SearchInitiatedResponse(BaseModel):
     success: bool = True
     transaction_id: str
+    tracking_id: str | None = None
     status: Literal['SEARCH_INITIATED'] = 'SEARCH_INITIATED'
+
+
+class SearchStatusResponse(BaseModel):
+    status: Literal['initiated', 'waiting_for_webhook', 'completed', 'failed']
+    catalogue: dict[str, Any] | None = None
+    transaction_id: str | None = None
+    error: str | None = None
